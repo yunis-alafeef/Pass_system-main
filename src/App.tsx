@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { Header } from './components/Header';
 import { SearchForm } from './components/SearchForm';
 import { TripCard } from './components/TripCard';
@@ -7,15 +8,19 @@ import { BookingFormModal } from './components/BookingFormModal';
 import { TicketModal } from './components/TicketModal';
 import { VendorDashboard } from './components/VendorDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
+import { LoginPage } from './components/auth/LoginPage';
+import { RegisterPage } from './components/auth/RegisterPage';
+import { ProfilePage } from './components/auth/ProfilePage';
+import { AuthGuard } from './components/auth/AuthGuard';
 import { mockTrips } from './data/mockData';
 import { Trip, Booking, TripType } from './types';
 import { Bus, ShieldCheck, Ticket, Compass, Sparkles, Filter } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'booking' | 'vendor' | 'admin' | 'my-tickets'>('booking');
   const [trips, setTrips] = useState<Trip[]>(mockTrips);
+ 
   const [filteredTrips, setFilteredTrips] = useState<Trip[]>(mockTrips);
-  
+
   // Selection & Modal states
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
@@ -61,112 +66,127 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-dark)' }}>
-      
+
       {/* Navbar Header */}
       <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
         bookingCount={userBookings.length}
       />
 
       {/* Main Content Area */}
       <main style={{ flex: 1 }}>
 
-        {/* Tab 1: Passenger Booking Flow */}
-        {activeTab === 'booking' && (
-          <div className="container">
-            
-            {/* Hero Welcome Banner */}
-            <div style={{ textAlign: 'center', paddingTop: '2.5rem', paddingBottom: '1rem' }} className="animate-fade-in">
-              <span className="badge badge-teal" style={{ marginBottom: '0.75rem', fontSize: '0.85rem', padding: '0.35rem 0.9rem' }}>
-                <Sparkles size={14} /> المنصة الرقمية الأولى لحجوزات النقل في اليمن
-              </span>
-              <h1 style={{ fontSize: '2.4rem', fontWeight: 900, color: '#fff', marginBottom: '0.5rem', lineHeight: '1.2' }}>
-                احجز تذكرتك بكل سهولة وأمان عبر <span style={{ background: 'linear-gradient(90deg, #3a86ff, #00f5d4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Pass System</span>
-              </h1>
-              <p style={{ color: '#94a3b8', fontSize: '1.05rem', maxWidth: '680px', margin: '0 auto' }}>
-                ربط موحد ومباشر بين مكاتب النقل الداخلي بين المحافظات اليمنية والنقل الدولي بين اليمن والمملكة العربية السعودية.
-              </p>
-            </div>
-
-            {/* Search Component */}
-            <SearchForm onSearch={handleSearch} />
-
-            {/* Trip Results Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Compass color="#3a86ff" /> الرحلات المتاحة ({filteredTrips.length})
-              </h2>
-              <span style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                <Filter size={14} /> خيارات الترتيب: الأسعار والتوفر المباشر
-              </span>
-            </div>
-
-            {/* Trips List */}
-            {filteredTrips.length > 0 ? (
-              filteredTrips.map((trip) => (
-                <TripCard key={trip.id} trip={trip} onSelectSeats={handleOpenSeatMap} />
-              ))
-            ) : (
-              <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-                <Bus size={48} color="#64748b" style={{ marginBottom: '1rem' }} />
-                <h3 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '0.5rem' }}>عذراً، لم يتم العثور على رحلات مطابقة</h3>
-                <p>يرجى تغيير معايير البحث أو اختيار تاريخ آخر.</p>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={
+            <div className="container">
+              {/* Hero Welcome Banner */}
+              <div style={{ textAlign: 'center', paddingTop: '2.5rem', paddingBottom: '1rem' }} className="animate-fade-in">
+                <span className="badge badge-teal" style={{ marginBottom: '0.75rem', fontSize: '0.85rem', padding: '0.35rem 0.9rem' }}>
+                  <Sparkles size={14} /> المنصة الرقمية الأولى لحجوزات النقل في اليمن
+                </span>
+                <h1 style={{ fontSize: '2.4rem', fontWeight: 900, color: '#fff', marginBottom: '0.5rem', lineHeight: '1.2' }}>
+                  احجز تذكرتك بكل سهولة وأمان عبر <span style={{ background: 'linear-gradient(90deg, #3a86ff, #00f5d4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Pass System</span>
+                </h1>
+                <p style={{ color: '#94a3b8', fontSize: '1.05rem', maxWidth: '680px', margin: '0 auto' }}>
+                  ربط موحد ومباشر بين مكاتب النقل الداخلي بين المحافظات اليمنية والنقل الدولي بين اليمن والمملكة العربية السعودية.
+                </p>
               </div>
-            )}
 
-          </div>
-        )}
+              {/* Search Component */}
+              <SearchForm onSearch={handleSearch} />
 
-        {/* Tab 2: User Bookings List */}
-        {activeTab === 'my-tickets' && (
-          <div className="container animate-fade-in" style={{ paddingTop: '2.5rem' }}>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <Ticket color="#00f5d4" /> سِجِل حجوزاتي وتذاكري الرقمية
-            </h1>
+              {/* Trip Results Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Compass color="#3a86ff" /> الرحلات المتاحة ({filteredTrips.length})
+                </h2>
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <Filter size={14} /> خيارات الترتيب: الأسعار والتوفر المباشر
+                </span>
+              </div>
 
-            {userBookings.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
-                {userBookings.map((b) => (
-                  <div key={b.id} className="glass-card" style={{ padding: '1.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <span className="badge badge-teal">تذكرة مؤكدة</span>
-                      <span style={{ fontSize: '0.85rem', color: '#ffbe0b', fontWeight: 700 }}>{b.bookingCode}</span>
-                    </div>
+              {/* Trips List */}
+              {filteredTrips.length > 0 ? (
+                filteredTrips.map((trip) => (
+                  <TripCard key={trip.id} trip={trip} onSelectSeats={handleOpenSeatMap} />
+                ))
+              ) : (
+                <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                  <Bus size={48} color="#64748b" style={{ marginBottom: '1rem' }} />
+                  <h3 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '0.5rem' }}>عذراً، لم يتم العثور على رحلات مطابقة</h3>
+                  <p>يرجى تغيير معايير البحث أو اختيار تاريخ آخر.</p>
+                </div>
+              )}
+            </div>
+          } />
 
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>{b.trip.vendorName}</h3>
-                    <div style={{ fontSize: '0.9rem', color: '#00f5d4', margin: '0.4rem 0', fontWeight: 700 }}>
-                      {b.trip.origin} ➔ {b.trip.destination}
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
-                      المقاعد: ({b.seats.join(', ')}) • التاريخ: {b.bookingDate}
-                    </div>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
 
-                    <button
-                      onClick={() => setActiveBooking(b)}
-                      className="btn-primary"
-                      style={{ width: '100%', fontSize: '0.9rem' }}
-                    >
-                      استعراض وطباعة التذكرة
-                    </button>
+          {/* Protected Routes */}
+          <Route path="/my-tickets" element={
+            <AuthGuard>
+              <div className="container animate-fade-in" style={{ paddingTop: '2.5rem' }}>
+                <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <Ticket color="#00f5d4" /> سِجِل حجوزاتي وتذاكري الرقمية
+                </h1>
+
+                {userBookings.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
+                    {userBookings.map((b) => (
+                      <div key={b.id} className="glass-card" style={{ padding: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                          <span className="badge badge-teal">تذكرة مؤكدة</span>
+                          <span style={{ fontSize: '0.85rem', color: '#ffbe0b', fontWeight: 700 }}>{b.bookingCode}</span>
+                        </div>
+
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>{b.trip.vendorName}</h3>
+                        <div style={{ fontSize: '0.9rem', color: '#00f5d4', margin: '0.4rem 0', fontWeight: 700 }}>
+                          {b.trip.origin} ➔ {b.trip.destination}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
+                          المقاعد: ({b.seats.join(', ')}) • التاريخ: {b.bookingDate}
+                        </div>
+
+                        <button
+                          onClick={() => setActiveBooking(b)}
+                          className="btn-primary"
+                          style={{ width: '100%', fontSize: '0.9rem' }}
+                        >
+                          استعراض وطباعة التذكرة
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                ) : (
+                  <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                    <Ticket size={48} color="#64748b" style={{ marginBottom: '1rem' }} />
+                    <h3 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '0.5rem' }}>لا توجد حجوزات سابقة حتى الآن</h3>
+                    <p>قم بالبحث عن رحلة واختيار المقاعد لإصدار تذكرتك الأولى.</p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-                <Ticket size={48} color="#64748b" style={{ marginBottom: '1rem' }} />
-                <h3 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '0.5rem' }}>لا توجد حجوزات سابقة حتى الآن</h3>
-                <p>قم بالبحث عن رحلة واختيار المقاعد لإصدار تذكرتك الأولى.</p>
-              </div>
-            )}
-          </div>
-        )}
+            </AuthGuard>
+          } />
 
-        {/* Tab 3: Vendor Management System */}
-        {activeTab === 'vendor' && <VendorDashboard />}
+          <Route path="/profile" element={
+            <AuthGuard>
+              <ProfilePage />
+            </AuthGuard>
+          } />
 
-        {/* Tab 4: Admin Core Platform */}
-        {activeTab === 'admin' && <AdminDashboard />}
+          <Route path="/vendor/dashboard" element={
+            <AuthGuard allowedRoles={['vendor', 'admin']}>
+              <VendorDashboard />
+            </AuthGuard>
+          } />
+
+          <Route path="/admin/dashboard" element={
+            <AuthGuard allowedRoles={['admin']}>
+              <AdminDashboard />
+            </AuthGuard>
+          } />
+        </Routes>
 
       </main>
 
