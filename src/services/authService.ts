@@ -7,7 +7,7 @@
  * لأن البنية (الأسماء وأنواع البيانات) مطابقة لتصميم 02-User-Identity-Management.md
  */
 
-import { api } from '../api';
+import { api, getApiErrorMessage, isBackendLikelyDown } from '../api';
 
 // ================== الأنواع ==================
 
@@ -108,6 +108,18 @@ export const decodeJwtPayload = (token: string): Record<string, unknown> | null 
 
 // ================== توليد رموز تجريبية ==================
 
+/** تحويل دور الخلفية (أحرف كبيرة) إلى دور الواجهة (أحرف صغيرة) */
+const mapApiRole = (role?: string): UserRole => {
+  switch (String(role ?? '').toUpperCase()) {
+    case 'ADMIN':
+      return 'admin';
+    case 'VENDOR':
+      return 'vendor';
+    default:
+      return 'customer';
+  }
+};
+
 /** يبني JWT تجريبي (على شكل header.payload.signature) ليعمل مع AuthGuard في الوضع التجريبي */
 const buildMockJwt = (user: User): string => {
     const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
@@ -161,14 +173,47 @@ const delay = (ms = 900) => new Promise((res) => setTimeout(res, ms));
 // ================== الخدمات ==================
 
 /**
- * تسجيل الدخول
- * TODO (Integration): استبدل بـ `return api.post('/auth/login', data)`
+ * تسجيل الدخول (المهمة 4.1/2.3)
+ * يحاول API الخلفية أولاً (POST /auth/login)، وينجح في الوضع التجريبي
+ * عند تعذر الوصول للخادم فقط. أخطاء الخلفية الصريحة (401/400) تمرر للمستخدم.
  */
 export const login = async (
     identifier: string,
     password: string,
     rememberMe: boolean
 ): Promise<LoginResponse> => {
+    if (!isBackendLikelyDown()) {
+        try {
+            const { data } = await api.post<{
+                accessToken: string;
+                refreshToken: string;
+                user: { id: string; email: string; role: string; fullName?: string; phone?: string };
+            }>('/auth/login', { email: identifier.trim().toLowerCase(), password });
+
+            const user: User = {
+                id: data.user.id,
+                fullName: data.user.fullName ?? data.user.email.split('@')[0],
+                email: data.user.email,
+                phone: data.user.phone ?? '',
+                role: mapApiRole(data.user.role),
+                isVerified: true,
+                createdAt: new Date().toISOString(),
+            };
+            const tokens: AuthTokens = {
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken,
+            };
+            tokenStore.save(tokens, user, rememberMe);
+            return { user, tokens };
+        } catch (error) {
+            // خطأ صريح من الخلفية → رسالة واضحة للمستخدم (لا fallback صامت لتجنب إرباك الحسابات)
+            if ((error as { response?: unknown }).response) {
+                throw new Error(getApiErrorMessage(error));
+            }
+            // خطأ شبكة → نكمل بالوضع التجريبي أدناه
+        }
+    }
+
     await delay();
     const accounts = getMockAccounts();
     const acc = accounts.find(
@@ -187,6 +232,24 @@ export const login = async (
     };
     tokenStore.save(tokens, user, rememberMe);
     return { user, tokens };
+};
+
+/**
+ * استرداد كلمة المرور (2.6) — يرسل رابط/رمز الاستعادة عبر الخلفية إن توفرت
+ */
+export const forgotPassword = async (email: string): Promise<{ message: string }> => {
+    if (!isBackendLikelyDown()) {
+        try {
+            const { data } = await api.post<{ message: string }>('/auth/forgot-password', { email });
+            return { message: data.message ?? 'تم إرسال رابط استرداد كلمة المرور إلى بريدك' };
+        } catch (error) {
+            if ((error as { response?: unknown }).response) {
+                throw new Error(getApiErrorMessage(error));
+            }
+        }
+    }
+    await delay(700);
+    return { message: `[وضع تجريبي] تم إرسال رابط الاسترداد إلى ${email}` };
 };
 
 /**

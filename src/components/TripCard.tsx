@@ -1,16 +1,17 @@
 import React from 'react';
-import { Bus, Clock, Star, Armchair, ShieldCheck, Check } from 'lucide-react';
+import { Bus, Clock, Star, Armchair, Check } from 'lucide-react';
 import { Trip } from '../types';
 
 interface TripCardProps {
   trip: Trip;
   onSelectSeats: (trip: Trip) => void;
+  onViewDetails?: (trip: Trip) => void;
 }
 
-export const TripCard: React.FC<TripCardProps> = ({ trip, onSelectSeats }) => {
+export const TripCard: React.FC<TripCardProps> = ({ trip, onSelectSeats, onViewDetails }) => {
   return (
     <div className="glass-card animate-fade-in" style={{ padding: '1.5rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      
+
       {/* Top Bar: Vendor & Badge */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -42,7 +43,7 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onSelectSeats }) => {
 
       {/* Main Trip Info: Origin -> Arrow -> Destination */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '1.5rem', background: 'rgba(0,0,0,0.2)', padding: '1rem 1.25rem', borderRadius: '14px' }}>
-        
+
         {/* Origin */}
         <div>
           <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>المغادرة</div>
@@ -76,7 +77,7 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onSelectSeats }) => {
 
       {/* Features & Prices */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', paddingTop: '0.5rem' }}>
-        
+
         {/* Features list */}
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {trip.features.slice(0, 4).map((feat, idx) => (
@@ -97,6 +98,11 @@ export const TripCard: React.FC<TripCardProps> = ({ trip, onSelectSeats }) => {
             </div>
           </div>
 
+          {onViewDetails && (
+            <button onClick={() => onViewDetails(trip)} className="btn-secondary" style={{ padding: '0.75rem 1.5rem' }}>
+              تفاصيل الرحلة
+            </button>
+          )}
           <button
             onClick={() => onSelectSeats(trip)}
             className="btn-primary"

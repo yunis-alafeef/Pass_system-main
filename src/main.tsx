@@ -6,7 +6,19 @@ import { AuthProvider } from './context/AuthContext'
 import App from './App'
 import './index.css'
 
-const queryClient = new QueryClient();
+// إعدادات React Query العامة (المهمة 4.2)
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

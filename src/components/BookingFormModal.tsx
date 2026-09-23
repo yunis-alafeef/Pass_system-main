@@ -1,23 +1,29 @@
 import React, { useState } from 'react';
-import { X, User, Phone, CreditCard, ShieldCheck, CheckCircle2, Building, Sparkles } from 'lucide-react';
+import { X, User, CreditCard, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { Trip, Passenger, PaymentMethod, Booking } from '../types';
+import { createBooking } from '../services/bookingService';
 
 interface BookingFormModalProps {
   trip: Trip;
-  selectedSeats: string[];
+  /** معرّفات المقاعد في الخلفية (seat ids) — تُستخدم عند إنشاء الحجز */
+  selectedSeatIds: string[];
+  /** أرقام المقاعد للعرض (seat numbers) */
+  selectedSeatNumbers: string[];
   onClose: () => void;
   onBookingComplete: (booking: Booking) => void;
 }
 
 export const BookingFormModal: React.FC<BookingFormModalProps> = ({
   trip,
-  selectedSeats,
+  selectedSeatIds,
+  selectedSeatNumbers,
   onClose,
   onBookingComplete,
 }) => {
   // Form state for each passenger
   const [passengers, setPassengers] = useState<Passenger[]>(
-    selectedSeats.map((seat) => ({
+    selectedSeatNumbers.map((seat) => ({
       seatNumber: seat,
       fullName: '',
       identityNumber: '',
@@ -27,7 +33,25 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
   );
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('kureimi');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const createBookingMutation = useMutation({
+    mutationFn: createBooking,
+    onSuccess: ({ booking }) => {
+      setErrorMessage(null);
+      onBookingComplete(booking);
+    },
+    onError: (error: unknown) => {
+      const response = (error as { response?: { data?: { message?: string | string[] } } }).response;
+      const rawMessage = response?.data?.message;
+      const message = Array.isArray(rawMessage)
+        ? rawMessage.join(' - ')
+        : rawMessage ?? 'تعذر إتمام الحجز. تحقق من اتصالك وأعد المحاولة.';
+      setErrorMessage(message);
+    },
+  });
+
+  const isSubmitting = createBookingMutation.isPending;
 
   const handlePassengerChange = (index: number, field: keyof Passenger, value: string) => {
     const updated = [...passengers];
@@ -35,34 +59,20 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
     setPassengers(updated);
   };
 
-  const totalPriceYER = selectedSeats.length * trip.priceYER;
-  const totalPriceSAR = selectedSeats.length * trip.priceSAR;
+  const totalPriceYER = selectedSeatNumbers.length * trip.priceYER;
+  const totalPriceSAR = selectedSeatNumbers.length * trip.priceSAR;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-
-    setTimeout(() => {
-      const newBooking: Booking = {
-        id: `BK-${Math.floor(100000 + Math.random() * 900000)}`,
-        bookingCode: `PASS-${Math.floor(1000 + Math.random() * 9000)}`,
-        trip,
-        seats: selectedSeats,
-        passengers,
-        totalPriceYER,
-        totalPriceSAR,
-        paymentMethod,
-        paymentStatus: 'paid',
-        bookingDate: new Date().toLocaleDateString('ar-YE', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        }),
-      };
-
-      setIsSubmitting(false);
-      onBookingComplete(newBooking);
-    }, 1200);
+    setErrorMessage(null);
+    createBookingMutation.mutate({
+      trip,
+      seats: selectedSeatIds,
+      passengers,
+      paymentMethod,
+      totalPriceYER,
+      totalPriceSAR,
+    });
   };
 
   return (
@@ -85,7 +95,7 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
         padding: '2rem',
         border: '1px solid rgba(0, 245, 212, 0.3)'
       }}>
-        
+
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
           <div>
@@ -93,7 +103,7 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
               <User color="#00f5d4" /> استكمال بيانات الحجز والدفع
             </h2>
             <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-              الشركة: {trip.vendorName} | المقاعد المختارة: ({selectedSeats.join(', ')})
+              المقاعد المختارة: ({selectedSeatNumbers.join(', ')})
             </span>
           </div>
           <button onClick={onClose} className="btn-secondary" style={{ padding: '0.5rem', borderRadius: '50%' }}>
@@ -102,6 +112,19 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit}>
+
+          {errorMessage && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.6rem',
+              background: 'rgba(255, 82, 82, 0.12)',
+              border: '1px solid rgba(255, 82, 82, 0.4)',
+              color: '#ff8a8a', padding: '0.8rem 1rem', borderRadius: '12px',
+              fontSize: '0.85rem', fontWeight: 600, marginBottom: '1.5rem'
+            }}>
+              <AlertTriangle size={18} />
+              <span>{errorMessage}</span>
+            </div>
+          )}
           
           {/* Passenger Forms */}
           <div style={{ marginBottom: '2rem' }}>

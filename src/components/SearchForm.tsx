@@ -11,7 +11,7 @@ export const SearchForm: React.FC<SearchFormProps> = ({ onSearch }) => {
   const [tripType, setTripType] = useState<TripType | 'all'>('all');
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
-  const [date, setDate] = useState('2026-07-28');
+  const [date, setDate] = useState('');
 
   const allDestinations = [...yemeniCities, ...internationalCities];
 
