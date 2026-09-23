@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Mail, Lock, Eye, EyeOff, User, Phone, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, User, UserPlus, Phone, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 
 const registerSchema = z.object({
     fullName: z.string().min(3, { message: 'الاسم الكامل يجب أن يتكون من 3 أحرف على الأقل' }),
@@ -10,9 +10,7 @@ const registerSchema = z.object({
     phone: z.string().regex(/^\+967[0-9]{9}$/, { message: 'رقم الهاتف يجب أن يبدأ بـ +967 ويليه 9 أرقام' }),
     password: z.string().min(8, { message: 'كلمة المرور يجب أن تتكون من 8 أحرف على الأقل' }),
     confirmPassword: z.string(),
-    acceptTerms: z.literal(true, {
-        errorMap: () => ({ message: 'يجب الموافقة على الشروط والأحكام' }),
-    }),
+    acceptTerms: z.boolean().refine((v) => v === true, { message: 'يجب الموافقة على الشروط والأحكام' }),
 }).refine((data) => data.password === data.confirmPassword, {
     message: 'كلمات المرور غير متطابقة',
     path: ['confirmPassword'],
