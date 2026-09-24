@@ -1,32 +1,123 @@
-import React, { useState } from 'react';
-import { User, Mail, Phone, Lock, Ticket, ShieldCheck, Camera, Edit2, CheckCircle2, Laptop2, Smartphone, History, Power } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { User, Mail, Phone, Lock, Ticket, ShieldCheck, Camera, Edit2, CheckCircle2, Laptop2, Smartphone, History, Power, AlertCircle, RotateCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import {
+    changePassword,
+    getActiveSessions,
+    revokeSession,
+    revokeAllOtherSessions,
+    getBookingHistory,
+    type ActiveSession,
+    type BookingHistoryItem,
+} from '../../services/authService';
 
+/**
+ * ProfilePage.tsx — الملف الشخصي (المهمة 2.9)
+ * ثلاثة تبويبات: البيانات الشخصية / الأمان والجلسات / سجل الحجوزات
+ *
+ * === دروس الربط المُطبقة هنا ===
+ * 1. المصدر الوحيد للحقيقة هو AuthContext: لا نُخزّن نسخة من المستخدم في useState
+ *    (نسخة قديمة = تعديلات لا تظهر).
+ * 2. الأفعال (حفظ/تغيير كلمة المرور) تتبع نمط: تعطيل الزر ← تنفيذ ← رسالة نجاح/خطأ.
+ * 3. الجلسات تُجلب عند فتح التبويب (lazy) لا في أول تحميل الصفحة.
+ */
 export const ProfilePage: React.FC = () => {
+    const { user, updateUser } = useAuth();
     const [activeTab, setActiveTab] = useState<'info' | 'security' | 'bookings'>('info');
     const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-    // Mock Data
-    const [userProfile, setUserProfile] = useState({
-        name: 'يعقوب الحكيمي',
-        email: 'yaqoub@example.com',
-        phone: '+967771234567',
-        avatar: 'https://i.pravatar.cc/150?u=yaqoub'
-    });
+    // ---- تبويب الأمان: كلمة المرور والجلسات ----
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [sessions, setSessions] = useState<ActiveSession[]>([]);
+    const [sessionsLoading, setSessionsLoading] = useState(false);
 
-    const mockSessions = [
-        { id: 1, device: 'Google Chrome - Windows', ip: '192.168.1.5', time: 'نشط الآن', icon: <Laptop2 size={20} />, active: true },
-        { id: 2, device: 'Safari - iPhone 14', ip: '10.0.0.8', time: 'آخر نشاط: أمس 10:30 م', icon: <Smartphone size={20} />, active: false }
-    ];
+    // ---- تبويب الحجوزات ----
+    const [bookings, setBookings] = useState<BookingHistoryItem[]>([]);
+    const [bookingsLoading, setBookingsLoading] = useState(false);
 
-    const handleSaveProfile = (e: React.FormEvent) => {
+    // حقول التعديل — تُهيأ من المستخدم الحالي وتُعاد ضبطها عند فتح/إغلاق التعديل
+    const [fullName, setFullName] = useState('');
+    const [phone, setPhone] = useState('');
+
+    useEffect(() => {
+        setFullName(user?.fullName ?? '');
+        setPhone(user?.phone ?? '');
+    }, [user]);
+
+    // جلب الجلسات النشطة عند فتح تبويب الأمان
+    useEffect(() => {
+        if (activeTab !== 'security') return;
+        let cancelled = false;
+        setSessionsLoading(true);
+        getActiveSessions()
+            .then((res) => { if (!cancelled) setSessions(res); })
+            .catch((err) => { if (!cancelled) setFeedback({ type: 'error', text: err instanceof Error ? err.message : 'تعذر جلب الجلسات' }); })
+            .finally(() => { if (!cancelled) setSessionsLoading(false); });
+        return () => { cancelled = true; };
+    }, [activeTab]);
+
+    // جلب سجل الحجوزات عند فتح تبويب الحجوزات
+    useEffect(() => {
+        if (activeTab !== 'bookings') return;
+        let cancelled = false;
+        setBookingsLoading(true);
+        getBookingHistory()
+            .then((res) => { if (!cancelled) setBookings(res); })
+            .catch(() => { if (!cancelled) setBookings([]); })
+            .finally(() => { if (!cancelled) setBookingsLoading(false); });
+        return () => { cancelled = true; };
+    }, [activeTab]);
+
+    /** حفظ التعديلات — يحدّث الخادم (PATCH /auth/me) ثم حالة السياق */
+    const handleSaveProfile = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsEditing(false);
-        alert('تم حفظ البيانات الشخصية بنجاح!');
+        setIsSaving(true);
+        setFeedback(null);
+        try {
+            await updateUser({ fullName, phone });
+            setIsEditing(false);
+            setFeedback({ type: 'success', text: 'تم حفظ البيانات الشخصية بنجاح' });
+        } catch (err) {
+            setFeedback({ type: 'error', text: err instanceof Error ? err.message : 'تعذر حفظ التعديلات' });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const handleUpdatePassword = (e: React.FormEvent) => {
+    /** تغيير كلمة المرور — POST /auth/change-password */
+    const handleUpdatePassword = async (e: React.FormEvent) => {
         e.preventDefault();
-        alert('تم تغيير كلمة المرور بنجاح!');
+        setIsChangingPassword(true);
+        setFeedback(null);
+        try {
+            await changePassword(currentPassword, newPassword);
+            setCurrentPassword('');
+            setNewPassword('');
+            setFeedback({ type: 'success', text: 'تم تغيير كلمة المرور بنجاح' });
+        } catch (err) {
+            setFeedback({ type: 'error', text: err instanceof Error ? err.message : 'تعذر تغيير كلمة المرور' });
+        } finally {
+            setIsChangingPassword(false);
+        }
+    };
+
+    /** إنهاء جلسة محددة ثم تحديث القائمة */
+    const handleRevokeSession = async (sessionId: string) => {
+        await revokeSession(sessionId);
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        setFeedback({ type: 'success', text: 'تم إنهاء الجلسة' });
+    };
+
+    /** إنهاء جميع الجلسات الأخرى */
+    const handleRevokeAll = async () => {
+        await revokeAllOtherSessions();
+        setSessions((prev) => prev.filter((s) => s.isCurrent));
+        setFeedback({ type: 'success', text: 'تم إنهاء جميع الجلسات الأخرى' });
     };
 
     return (
@@ -37,6 +128,20 @@ export const ProfilePage: React.FC = () => {
                 <User color="#3a86ff" /> الملف الشخصي والإعدادات
             </h1>
 
+            {/* رسالة نتيجة عامة (نجاح/خطأ) */}
+            {feedback && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem',
+                    padding: '0.85rem 1rem', borderRadius: '12px', fontSize: '0.88rem', fontWeight: 600,
+                    background: feedback.type === 'success' ? 'rgba(0, 245, 212, 0.08)' : 'rgba(255, 0, 110, 0.08)',
+                    border: `1px solid ${feedback.type === 'success' ? 'rgba(0, 245, 212, 0.3)' : 'rgba(255, 0, 110, 0.3)'}`,
+                    color: feedback.type === 'success' ? '#00f5d4' : '#ff006e',
+                }}>
+                    {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                    {feedback.text}
+                </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(250px, 300px) 1fr', gap: '2rem', alignItems: 'start' }}>
 
                 {/* Sidebar Nav */}
@@ -44,7 +149,12 @@ export const ProfilePage: React.FC = () => {
 
                     <div style={{ textAlign: 'center', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1.5rem' }}>
                         <div style={{ position: 'relative', width: '100px', height: '100px', margin: '0 auto 1rem' }}>
-                            <img src={userProfile.avatar} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', border: '3px solid #3a86ff' }} />
+                            {/* الصورة تأتي من المستخدم الحالي في السياق (user.avatar) */}
+                            <img
+                                src={user?.avatar || `https://i.pravatar.cc/150?u=${user?.id ?? 'guest'}`}
+                                alt="Avatar"
+                                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', border: '3px solid #3a86ff' }}
+                            />
                             <button
                                 title="تغيير الصورة"
                                 style={{ position: 'absolute', bottom: 0, left: 0, background: '#3a86ff', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer' }}
@@ -52,8 +162,10 @@ export const ProfilePage: React.FC = () => {
                                 <Camera size={16} />
                             </button>
                         </div>
-                        <h3 style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 700 }}>{userProfile.name}</h3>
-                        <span className="badge badge-teal" style={{ marginTop: '0.5rem' }}><CheckCircle2 size={12} /> حساب موثق</span>
+                        <h3 style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 700 }}>{user?.fullName ?? '—'}</h3>
+                        <span className="badge badge-teal" style={{ marginTop: '0.5rem' }}>
+                            <CheckCircle2 size={12} /> {user?.isVerified ? 'حساب موثق' : 'بانتظار التوثيق'}
+                        </span>
                     </div>
 
                     <button
@@ -102,8 +214,8 @@ export const ProfilePage: React.FC = () => {
                                         <input
                                             type="text"
                                             disabled={!isEditing}
-                                            value={userProfile.name}
-                                            onChange={(e) => setUserProfile({ ...userProfile, name: e.target.value })}
+                                            value={fullName}
+                                            onChange={(e) => setFullName(e.target.value)}
                                             style={{ width: '100%', padding: '0.8rem 1rem 0.8rem 2.8rem', backgroundColor: isEditing ? '#090d16' : 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', color: '#fff', fontFamily: 'Cairo', fontSize: '1rem', outline: 'none' }}
                                         />
                                     </div>
@@ -116,7 +228,7 @@ export const ProfilePage: React.FC = () => {
                                         <input
                                             type="email"
                                             disabled
-                                            value={userProfile.email}
+                                            value={user?.email ?? ''}
                                             style={{ width: '100%', padding: '0.8rem 1rem 0.8rem 2.8rem', backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', color: '#94a3b8', fontFamily: 'Cairo', fontSize: '1rem', outline: 'none', direction: 'ltr', textAlign: 'right' }}
                                         />
                                     </div>
@@ -129,8 +241,8 @@ export const ProfilePage: React.FC = () => {
                                         <input
                                             type="text"
                                             disabled={!isEditing}
-                                            value={userProfile.phone}
-                                            onChange={(e) => setUserProfile({ ...userProfile, phone: e.target.value })}
+                                            value={phone}
+                                            onChange={(e) => setPhone(e.target.value)}
                                             style={{ width: '100%', padding: '0.8rem 1rem 0.8rem 2.8rem', backgroundColor: isEditing ? '#090d16' : 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', color: '#fff', fontFamily: 'Cairo', fontSize: '1rem', outline: 'none', direction: 'ltr', textAlign: 'right' }}
                                         />
                                     </div>
@@ -138,8 +250,10 @@ export const ProfilePage: React.FC = () => {
 
                                 {isEditing && (
                                     <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
-                                        <button type="button" onClick={() => setIsEditing(false)} className="btn-secondary">إلغاء</button>
-                                        <button type="submit" className="btn-primary">حفظ التعديلات</button>
+                                        <button type="button" onClick={() => { setIsEditing(false); setFullName(user?.fullName ?? ''); setPhone(user?.phone ?? ''); }} className="btn-secondary">إلغاء</button>
+                                        <button type="submit" className="btn-primary" disabled={isSaving}>
+                                            {isSaving ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}
+                                        </button>
                                     </div>
                                 )}
                             </form>
@@ -156,12 +270,29 @@ export const ProfilePage: React.FC = () => {
                                 </h2>
                                 <form onSubmit={handleUpdatePassword} style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.25rem', maxWidth: '400px' }}>
                                     <div>
-                                        <input type="password" placeholder="كلمة المرور الحالية" required style={{ width: '100%', padding: '0.8rem 1rem', backgroundColor: '#090d16', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', color: '#fff', fontFamily: 'Cairo', fontSize: '0.95rem', outline: 'none' }} />
+                                        <input
+                                            type="password"
+                                            placeholder="كلمة المرور الحالية"
+                                            required
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                            style={{ width: '100%', padding: '0.8rem 1rem', backgroundColor: '#090d16', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', color: '#fff', fontFamily: 'Cairo', fontSize: '0.95rem', outline: 'none' }}
+                                        />
                                     </div>
                                     <div>
-                                        <input type="password" placeholder="كلمة المرور الجديدة" required style={{ width: '100%', padding: '0.8rem 1rem', backgroundColor: '#090d16', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', color: '#fff', fontFamily: 'Cairo', fontSize: '0.95rem', outline: 'none' }} />
+                                        <input
+                                            type="password"
+                                            placeholder="كلمة المرور الجديدة"
+                                            required
+                                            minLength={8}
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            style={{ width: '100%', padding: '0.8rem 1rem', backgroundColor: '#090d16', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', color: '#fff', fontFamily: 'Cairo', fontSize: '0.95rem', outline: 'none' }}
+                                        />
                                     </div>
-                                    <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem' }}>تحديث كلمة المرور</button>
+                                    <button type="submit" className="btn-primary" disabled={isChangingPassword} style={{ marginTop: '0.5rem', opacity: isChangingPassword ? 0.7 : 1 }}>
+                                        {isChangingPassword ? 'جارٍ التحديث...' : 'تحديث كلمة المرور'}
+                                    </button>
                                 </form>
                             </div>
 
@@ -171,23 +302,45 @@ export const ProfilePage: React.FC = () => {
                                     <ShieldCheck color="#00f5d4" /> الأجهزة والجلسات النشطة
                                 </h2>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    {mockSessions.map(session => (
-                                        <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', backgroundColor: session.active ? 'rgba(0, 245, 212, 0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${session.active ? 'rgba(0, 245, 212, 0.2)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                <div style={{ color: session.active ? '#00f5d4' : '#94a3b8' }}>{session.icon}</div>
-                                                <div>
-                                                    <h4 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600 }}>{session.device} {session.active && <span className="badge badge-teal" style={{ marginRight: '0.5rem' }}>الحالي</span>}</h4>
-                                                    <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{session.ip} • {session.time}</p>
-                                                </div>
-                                            </div>
-                                            {!session.active && (
-                                                <button className="btn-secondary" style={{ padding: '0.5rem 1rem', color: '#ff006e', borderColor: 'rgba(255, 0, 110, 0.3)' }}>
-                                                    <Power size={16} /> إنهاء الجلسة
-                                                </button>
-                                            )}
+                                    {sessionsLoading ? (
+                                        <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94a3b8' }}>
+                                            <RotateCw size={20} style={{ animation: 'spin 1.2s linear infinite' }} /> جارٍ جلب الجلسات...
                                         </div>
-                                    ))}
-                                    <button className="btn-secondary" style={{ width: '100%', marginTop: '1rem' }}>تسجيل الخروج من جميع الأجهزة الأخرى</button>
+                                    ) : sessions.length === 0 ? (
+                                        <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94a3b8' }}>لا توجد جلسات نشطة</div>
+                                    ) : (
+                                        sessions.map(session => (
+                                            <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', backgroundColor: session.isCurrent ? 'rgba(0, 245, 212, 0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${session.isCurrent ? 'rgba(0, 245, 212, 0.2)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                    {/* أيقونة حسب نوع الجهاز: موبايل أم حاسب */}
+                                                    <div style={{ color: session.isCurrent ? '#00f5d4' : '#94a3b8' }}>
+                                                        {/iPhone|Android|Mobile/i.test(session.device) ? <Smartphone size={20} /> : <Laptop2 size={20} />}
+                                                    </div>
+                                                    <div>
+                                                        <h4 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600 }}>
+                                                            {session.device}{' '}
+                                                            {session.isCurrent && <span className="badge badge-teal" style={{ marginRight: '0.5rem' }}>الحالي</span>}
+                                                        </h4>
+                                                        <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                            {session.browser ? `${session.browser} • ` : ''}{session.ip} • {session.lastActive}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {!session.isCurrent && (
+                                                    <button
+                                                        onClick={() => void handleRevokeSession(session.id)}
+                                                        className="btn-secondary"
+                                                        style={{ padding: '0.5rem 1rem', color: '#ff006e', borderColor: 'rgba(255, 0, 110, 0.3)' }}
+                                                    >
+                                                        <Power size={16} /> إنهاء الجلسة
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                    <button onClick={() => void handleRevokeAll()} className="btn-secondary" style={{ width: '100%', marginTop: '1rem' }}>
+                                        تسجيل الخروج من جميع الأجهزة الأخرى
+                                    </button>
                                 </div>
                             </div>
                         </>
@@ -195,11 +348,36 @@ export const ProfilePage: React.FC = () => {
 
                     {/* Tab: Booking History */}
                     {activeTab === 'bookings' && (
-                        <div className="glass-panel animate-fade-in" style={{ padding: '3rem', textAlign: 'center' }}>
-                            <Ticket size={48} color="#64748b" style={{ margin: '0 auto 1rem' }} />
-                            <h3 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '0.5rem' }}>ليس لديك سفريات سابقة</h3>
-                            <p style={{ color: '#94a3b8' }}>يبدو أنك لم تقم بأي حجز بعد. ابحث عن رحلة جديدة للبدء!</p>
-                            <button className="btn-primary" style={{ marginTop: '1.5rem' }}>البحث عن رحلات</button>
+                        <div className="glass-panel animate-fade-in" style={{ padding: '2rem' }}>
+                            <h2 style={{ fontSize: '1.4rem', color: '#fff', fontWeight: 800, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <History color="#3a86ff" /> سجل الحجوزات
+                            </h2>
+                            {bookingsLoading ? (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                                    <RotateCw size={20} style={{ animation: 'spin 1.2s linear infinite' }} /> جارٍ الجلب...
+                                </div>
+                            ) : bookings.length === 0 ? (
+                                <div style={{ padding: '3rem', textAlign: 'center' }}>
+                                    <Ticket size={48} color="#64748b" style={{ margin: '0 auto 1rem' }} />
+                                    <h3 style={{ fontSize: '1.2rem', color: '#fff', marginBottom: '0.5rem' }}>ليس لديك سفريات سابقة</h3>
+                                    <p style={{ color: '#94a3b8' }}>يبدو أنك لم تقم بأي حجز بعد. ابحث عن رحلة جديدة للبدء!</p>
+                                    <Link to="/" className="btn-primary" style={{ marginTop: '1.5rem', display: 'inline-flex', textDecoration: 'none' }}>البحث عن رحلات</Link>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    {bookings.map((b) => (
+                                        <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            <div>
+                                                <div style={{ color: '#fff', fontWeight: 700 }}>{b.route}</div>
+                                                <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                                                    {b.bookingCode} • {b.date} • المقاعد: {b.seats}
+                                                </div>
+                                            </div>
+                                            <div style={{ color: '#00f5d4', fontWeight: 800 }}>{b.priceYER.toLocaleString()} ر.ي</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 

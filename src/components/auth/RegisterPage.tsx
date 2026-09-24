@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, User, UserPlus, Phone, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const registerSchema = z.object({
     fullName: z.string().min(3, { message: 'الاسم الكامل يجب أن يتكون من 3 أحرف على الأقل' }),
@@ -24,6 +26,13 @@ export const RegisterPage: React.FC = () => {
     const [passwordStrength, setPasswordStrength] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [step, setStep] = useState<'form' | 'otp'>('form');
+    // خطأ من الخلفية (بريد/هاتف مكرر...) — يظهر في أعلى النموذج
+    const [formError, setFormError] = useState<string | null>(null);
+    // بيانات التسجيل الحالية (لتمريرها لخطوة OTP إن لزمت لاحقاً)
+    const [pendingData, setPendingData] = useState<RegisterFormValues | null>(null);
+
+    const { register: authRegister } = useAuth();
+    const navigate = useNavigate();
 
     const {
         register,
@@ -53,13 +62,30 @@ export const RegisterPage: React.FC = () => {
         setPasswordStrength(strength);
     }, [passwordVal]);
 
+    /**
+     * إرسال التسجيل إلى الخلفية (POST /auth/register → يمر عبر AuthContext)
+     * === درس: "النجاح" يعني أن الخادم قبل التسجيل ===
+     * لا ننتقل لخطوة OTP لأن الخلفية تنشئ الحساب مباشرة وتُرجع توكنات دخول،
+     * فنحوّل المستخدم للصفحة الرئيسية مسجلاً للدخول. عند إضافة /auth/otp مستقبلاً
+     * نعيد تفعيل خطوة OTP في هذا المكان (stageRegistration + setStep('otp')).
+     */
     const onSubmit = async (data: RegisterFormValues) => {
         setIsLoading(true);
-        setTimeout(() => {
-            console.log('Registration Data:', data);
+        setFormError(null);
+        try {
+            await authRegister({
+                fullName: data.fullName,
+                email: data.email,
+                phone: data.phone,
+                password: data.password,
+            });
+            setPendingData(data);
+            navigate('/');
+        } catch (err) {
+            setFormError(err instanceof Error ? err.message : 'تعذر إنشاء الحساب، حاول مرة أخرى');
+        } finally {
             setIsLoading(false);
-            setStep('otp');
-        }, 1500);
+        }
     };
 
     const handleOtpSubmit = (e: React.FormEvent) => {
@@ -70,6 +96,9 @@ export const RegisterPage: React.FC = () => {
             alert('تم التحقق بنجاح! تم إنشاء الحساب.');
         }, 1500);
     };
+
+    // نحتفظ بمرجع البيانات المستخدمة لتفادي تحذير المتغير غير المستخدم
+    void pendingData;
 
     const getStrengthColor = () => {
         if (passwordStrength < 50) return '#ff006e';
@@ -107,6 +136,19 @@ export const RegisterPage: React.FC = () => {
                         </div>
 
                         <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+                            {/* خطأ من الخادم (بريد/هاتف مسجل مسبقاً...) */}
+                            {formError && (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.6rem',
+                                    background: 'rgba(255, 0, 110, 0.08)', border: '1px solid rgba(255, 0, 110, 0.3)',
+                                    borderRadius: '12px', padding: '0.85rem 1rem', color: '#ff006e',
+                                    fontSize: '0.88rem', fontWeight: 600,
+                                }} className="animate-fade-in">
+                                    <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                                    {formError}
+                                </div>
+                            )}
 
                             {/* Full Name */}
                             <div>
@@ -263,9 +305,9 @@ export const RegisterPage: React.FC = () => {
                         <div style={{ textAlign: 'center', marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1.5rem' }}>
                             <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
                                 لديك حساب بالفعل؟{' '}
-                                <a href="#login" onClick={() => window.location.href = '#' /* For demo purp */} style={{ color: '#ffbe0b', fontWeight: 700, textDecoration: 'none' }}>
+                                <Link to="/login" style={{ color: '#ffbe0b', fontWeight: 700, textDecoration: 'none' }}>
                                     تسجيل الدخول
-                                </a>
+                                </Link>
                             </p>
                         </div>
                     </>

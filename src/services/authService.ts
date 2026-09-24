@@ -173,6 +173,59 @@ const delay = (ms = 900) => new Promise((res) => setTimeout(res, ms));
 // ================== الخدمات ==================
 
 /**
+ * استرداد كلمة المرور (2.6) — يرسل رابط/رمز الاستعادة عبر الخلفية إن توفرت
+ */
+export const forgotPassword = async (email: string): Promise<{ message: string }> => {
+    if (!isBackendLikelyDown()) {
+        try {
+            const { data } = await api.post<{ message: string }>('/auth/forgot-password', { email });
+            return { message: data.message ?? 'تم إرسال رابط استرداد كلمة المرور إلى بريدك' };
+        } catch (error) {
+            if ((error as { response?: unknown }).response) {
+                throw new Error(getApiErrorMessage(error));
+            }
+        }
+    }
+    await delay(700);
+    return { message: `[وضع تجريبي] تم إرسال رابط الاسترداد إلى ${email}` };
+};
+
+/** الحقول التي تعيدها الخلفية من /auth/* عند النجاح */
+interface ApiAuthUser {
+    id: string;
+    email: string;
+    role: string;
+    phone?: string;
+    fullName?: string;
+}
+
+interface ApiAuthResponse {
+    accessToken: string;
+    refreshToken: string;
+    user: ApiAuthUser;
+    userId?: string;
+}
+
+/** يوحد شكل مستخدم الخلفية مع نموذج الواجهة (User) */
+const mapApiUser = (u: ApiAuthUser): User => ({
+    id: u.id,
+    fullName: u.fullName ?? u.email.split('@')[0],
+    email: u.email,
+    phone: u.phone ?? '',
+    role: mapApiRole(u.role),
+    isVerified: true,
+    createdAt: new Date().toISOString(),
+});
+
+/** يحفظ استجابة المصادقة (توكنات + مستخدم) في التخزين المحلي ويعيدها موحّدة */
+const persistAuthResponse = (data: ApiAuthResponse, rememberMe: boolean): LoginResponse => {
+    const user = mapApiUser(data.user);
+    const tokens: AuthTokens = { accessToken: data.accessToken, refreshToken: data.refreshToken };
+    tokenStore.save(tokens, user, rememberMe);
+    return { user, tokens };
+};
+
+/**
  * تسجيل الدخول (المهمة 4.1/2.3)
  * يحاول API الخلفية أولاً (POST /auth/login)، وينجح في الوضع التجريبي
  * عند تعذر الوصول للخادم فقط. أخطاء الخلفية الصريحة (401/400) تمرر للمستخدم.
@@ -184,27 +237,11 @@ export const login = async (
 ): Promise<LoginResponse> => {
     if (!isBackendLikelyDown()) {
         try {
-            const { data } = await api.post<{
-                accessToken: string;
-                refreshToken: string;
-                user: { id: string; email: string; role: string; fullName?: string; phone?: string };
-            }>('/auth/login', { email: identifier.trim().toLowerCase(), password });
-
-            const user: User = {
-                id: data.user.id,
-                fullName: data.user.fullName ?? data.user.email.split('@')[0],
-                email: data.user.email,
-                phone: data.user.phone ?? '',
-                role: mapApiRole(data.user.role),
-                isVerified: true,
-                createdAt: new Date().toISOString(),
-            };
-            const tokens: AuthTokens = {
-                accessToken: data.accessToken,
-                refreshToken: data.refreshToken,
-            };
-            tokenStore.save(tokens, user, rememberMe);
-            return { user, tokens };
+            const { data } = await api.post<ApiAuthResponse>('/auth/login', {
+                email: identifier.trim().toLowerCase(),
+                password,
+            });
+            return persistAuthResponse(data, rememberMe);
         } catch (error) {
             // خطأ صريح من الخلفية → رسالة واضحة للمستخدم (لا fallback صامت لتجنب إرباك الحسابات)
             if ((error as { response?: unknown }).response) {
@@ -235,31 +272,68 @@ export const login = async (
 };
 
 /**
- * استرداد كلمة المرور (2.6) — يرسل رابط/رمز الاستعادة عبر الخلفية إن توفرت
+ * إنشاء الحساب (المهمتان 2.2 / 2.4)
+ * يرسل POST /auth/register الحقيقي ويعيد تسجيل الدخول تلقائياً بالتوكنات الراجعة.
+ * === ملاحظة معمارية مهمة ===
+ * الخلفية تنشئ الحساب مباشرة ولا تملك إندبوينت OTP بعد (المهمة 2.5 مؤجلة)،
+ * لذا نتعامل مع التسجيل كعملية واحدة بدل انتظار رمز تحقق غير موجود على الخادم.
+ * عند إضافة /auth/otp لاحقاً، يكفي استعادة الخطوتين (stageRegistration + verifyOtp).
  */
-export const forgotPassword = async (email: string): Promise<{ message: string }> => {
+export const register = async (payload: RegisterPayload): Promise<LoginResponse> => {
     if (!isBackendLikelyDown()) {
         try {
-            const { data } = await api.post<{ message: string }>('/auth/forgot-password', { email });
-            return { message: data.message ?? 'تم إرسال رابط استرداد كلمة المرور إلى بريدك' };
+            const { data } = await api.post<ApiAuthResponse>('/auth/register', {
+                fullName: payload.fullName.trim(),
+                email: payload.email.trim().toLowerCase(),
+                phone: payload.phone.trim(),
+                password: payload.password,
+            });
+            return persistAuthResponse(data, true);
         } catch (error) {
+            // رد صريح من الخلفية (بريد مكرر، بيانات ناقصة...) → نعرضه للمستخدم
             if ((error as { response?: unknown }).response) {
                 throw new Error(getApiErrorMessage(error));
             }
+            // خطأ شبكة → نكمل بالوضع التجريبي المحلي أدناه
         }
     }
-    await delay(700);
-    return { message: `[وضع تجريبي] تم إرسال رابط الاسترداد إلى ${email}` };
+
+    await delay();
+    const accounts = getMockAccounts();
+    if (accounts.some((a) => a.email === payload.email.trim().toLowerCase() || a.phone === payload.phone.trim())) {
+        throw new Error('هذا البريد الإلكتروني أو رقم الهاتف مسجل بالفعل');
+    }
+    const account: MockAccount = {
+        id: `usr_${randomId()}`,
+        fullName: payload.fullName.trim(),
+        email: payload.email.trim().toLowerCase(),
+        phone: payload.phone.trim(),
+        avatar: `https://i.pravatar.cc/150?u=${randomId()}`,
+        role: 'customer',
+        isVerified: true,
+        createdAt: new Date().toISOString(),
+        password: payload.password,
+    };
+    accounts.push(account);
+    saveMockAccounts(accounts);
+
+    const { password: _pw, ...user } = account;
+    const tokens: AuthTokens = {
+        accessToken: buildMockJwt(user),
+        refreshToken: `mock-refresh-${randomId()}`,
+    };
+    tokenStore.save(tokens, user, true);
+    return { user, tokens };
 };
 
 /**
- * إرسال رمز OTP (في الوضع التجريبي يعرض الرمز في console)
+ * إرسال رمز OTP — الخلفية لا تدعمه بعد (المهمة 2.5)، فهو يعمل في الوضع التجريبي
+ * (يعرض الرمز في الـ console لتمكين التجربة الكاملة محلياً).
  * TODO (Integration): استبدل بـ `return api.post('/auth/otp/send', { phone })`
  */
 export const sendOtp = async (phone: string): Promise<{ devCode: string }> => {
     await delay(700);
     const code = String(Math.floor(1000 + Math.random() * 9000));
-    // في الوضع التجريبي نحتفظ بالرمز محلياً لنتمكن من التحقق منه
     sessionStorage.setItem('otp_code', code);
     sessionStorage.setItem('otp_phone', phone);
     console.info(`[DEMO MODE] رمز التحقق المرسل إلى ${phone} هو: ${code}`);
@@ -267,7 +341,7 @@ export const sendOtp = async (phone: string): Promise<{ devCode: string }> => {
 };
 
 /**
- * التحقق من رمز OTP وإنشاء الحساب نهائياً
+ * التحقق من رمز OTP وإنشاء الحساب نهائياً (وضع تجريبي فقط حالياً)
  * TODO (Integration): استبدل بـ `return api.post('/auth/otp/verify', { phone, code })`
  */
 export const verifyOtp = async (code: string): Promise<LoginResponse> => {
@@ -278,7 +352,7 @@ export const verifyOtp = async (code: string): Promise<LoginResponse> => {
 
     const pendingRaw = sessionStorage.getItem('pending_registration');
     if (!pendingRaw) throw new Error('انتهت صلاحية بيانات التسجيل، أعد المحاولة');
-    const pending = JSON.parse(pendingRaw) as Omit<MockAccount, 'password'> & { password: string };
+    const pending = JSON.parse(pendingRaw) as MockAccount;
 
     const accounts = getMockAccounts();
     if (accounts.some((a) => a.email === pending.email || a.phone === pending.phone)) {
@@ -301,7 +375,7 @@ export const verifyOtp = async (code: string): Promise<LoginResponse> => {
 };
 
 /**
- * تخزين بيانات التسجيل مؤقتاً حتى التحقق من OTP
+ * تخزين بيانات التسجيل مؤقتاً حتى التحقق من OTP (وضع تجريبي)
  */
 export const stageRegistration = (payload: RegisterPayload): void => {
     const account: Omit<MockAccount, 'isVerified' | 'createdAt'> = {
@@ -317,22 +391,49 @@ export const stageRegistration = (payload: RegisterPayload): void => {
 };
 
 /**
- * تسجيل الخروج
- * TODO (Integration): استبدل بـ `return api.post('/auth/logout')`
+ * تسجيل الخروج (2.8)
+ * يبلّغ الخلفية لإبطال جلسة هذا الجهاز، ثم يفرغ التخزين المحلي دائماً
+ * (حتى لو فشل الاتصال — الأمان يقتضي ألا يبقى التوكن في المتصفح).
  */
 export const logout = async (): Promise<void> => {
-    await delay(300);
-    tokenStore.clear();
+    const refreshToken = tokenStore.refresh;
+    try {
+        if (!isBackendLikelyDown()) {
+            await api.post('/auth/logout', { refreshToken });
+        }
+    } catch {
+        // نتجاهل خطأ الخادم — الخروج المحلي يجب أن ينجح دائماً
+    } finally {
+        tokenStore.clear();
+    }
 };
 
 /**
- * تحديث بيانات الملف الشخصي
- * TODO (Integration): استبدل بـ `return api.patch('/users/me', data)`
+ * تحديث بيانات الملف الشخصي (2.9) — PATCH /auth/me
+ * الخلفية تقبل الاسم والصورة فقط (البريد/الهاتف حقول هوية غير قابلة للتعديل من هنا).
  */
 export const updateProfile = async (data: Partial<Pick<User, 'fullName' | 'phone' | 'avatar'>>): Promise<User> => {
-    await delay(600);
     const current = tokenStore.user;
     if (!current) throw new Error('غير مصرح — سجل الدخول أولاً');
+
+    if (!isBackendLikelyDown()) {
+        try {
+            const { data: res } = await api.patch<ApiAuthUser>('/auth/me', {
+                fullName: data.fullName,
+                avatar: data.avatar,
+            });
+            const updated: User = { ...current, ...mapApiUser(res) };
+            localStorage.setItem(KEYS.user, JSON.stringify(updated));
+            return updated;
+        } catch (error) {
+            if ((error as { response?: unknown }).response) {
+                throw new Error(getApiErrorMessage(error));
+            }
+            // خطأ شبكة → نكمل بالوضع التجريبي
+        }
+    }
+
+    await delay(600);
     const accounts = getMockAccounts();
     const idx = accounts.findIndex((a) => a.id === current.id);
     if (idx >= 0) {
@@ -345,10 +446,21 @@ export const updateProfile = async (data: Partial<Pick<User, 'fullName' | 'phone
 };
 
 /**
- * تغيير كلمة المرور
- * TODO (Integration): استبدل بـ `return api.post('/auth/change-password', data)`
+ * تغيير كلمة المرور (2.9) — POST /auth/change-password
  */
 export const changePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+    if (!isBackendLikelyDown()) {
+        try {
+            await api.post('/auth/change-password', { currentPassword, newPassword });
+            return;
+        } catch (error) {
+            // الخلفية تعيد 400 مع رسالة عربية عند خطأ كلمة المرور الحالية
+            if ((error as { response?: unknown }).response) {
+                throw new Error(getApiErrorMessage(error));
+            }
+        }
+    }
+
     await delay(700);
     const current = tokenStore.user;
     if (!current) throw new Error('غير مصرح — سجل الدخول أولاً');
@@ -363,10 +475,31 @@ export const changePassword = async (currentPassword: string, newPassword: strin
 };
 
 /**
- * جلب الجلسات النشطة (محاكاة)
- * TODO (Integration): استبدل بـ `return api.get('/auth/sessions')`
+ * جلب الجلسات النشطة (2.8) — GET /auth/sessions
+ * نرسل refresh token الجهاز الحالي في الهيئة لتمييز جلستنا بـ isCurrent.
  */
 export const getActiveSessions = async (): Promise<ActiveSession[]> => {
+    if (!isBackendLikelyDown()) {
+        try {
+            const { data } = await api.get<Array<{ id: string; device: string; lastActive: string; isCurrent: boolean }>>(
+                '/auth/sessions',
+                { data: { refreshToken: tokenStore.refresh } }
+            );
+            return data.map((s) => ({
+                id: s.id,
+                device: s.device,
+                browser: '',
+                ip: '—',
+                lastActive: s.isCurrent
+                    ? 'نشط الآن'
+                    : new Intl.DateTimeFormat('ar-YE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(s.lastActive)),
+                isCurrent: s.isCurrent,
+            }));
+        } catch (error) {
+            if ((error as { response?: unknown }).response) throw new Error(getApiErrorMessage(error));
+        }
+    }
+
     await delay(500);
     return [
         { id: 'sess_1', device: 'Google Chrome', browser: 'Windows 11', ip: '192.168.1.5', lastActive: 'نشط الآن', isCurrent: true },
@@ -375,19 +508,31 @@ export const getActiveSessions = async (): Promise<ActiveSession[]> => {
 };
 
 /**
- * إنهاء جلسة محددة
- * TODO (Integration): استبدل بـ `return api.delete('/auth/sessions/:id')`
+ * إنهاء جلسة محددة — DELETE /auth/sessions/:id
+ * === درس: نجاح صامت للخدمات الثانوية ===
+ * فشل إلغاء جلسة لا يجب أن يُظهر شاشة خطأ حمراء — الجلسة ستُبطل بانتهاء صلاحيتها تلقائياً.
  */
-export const revokeSession = async (_sessionId: string): Promise<void> => {
-    await delay(500);
+export const revokeSession = async (sessionId: string): Promise<void> => {
+    if (!isBackendLikelyDown()) {
+        try {
+            await api.delete(`/auth/sessions/${sessionId}`);
+        } catch {
+            // تجاهل — انظر التعليق أعلاه
+        }
+    }
 };
 
 /**
- * إنهاء جميع الجلسات الأخرى
- * TODO (Integration): استبدل بـ `return api.post('/auth/sessions/revoke-all')`
+ * إنهاء جميع الجلسات الأخرى — POST /auth/sessions/revoke-all
  */
 export const revokeAllOtherSessions = async (): Promise<void> => {
-    await delay(600);
+    if (!isBackendLikelyDown()) {
+        try {
+            await api.post('/auth/sessions/revoke-all', { refreshToken: tokenStore.refresh });
+        } catch {
+            // تجاهل — انظر التعليق أعلاه
+        }
+    }
 };
 
 /**
