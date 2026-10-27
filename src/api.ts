@@ -58,13 +58,22 @@ export const isNetworkError = (error: unknown): boolean => {
   return false;
 };
 
-// ================== Request Interceptor (JWT) ==================
+import { platformLogService } from './services/platformLogService';
+
+// ================== Request Interceptor (JWT & Request Lifecycle) ==================
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  // FR-CP-001-01: تعيين معرّف فريد وتتبع زمني لكل طلب
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  config.headers['X-Request-Id'] = requestId;
+  (config as unknown as { _requestStartTime?: number; _requestId?: string })._requestStartTime = Date.now();
+  (config as unknown as { _requestStartTime?: number; _requestId?: string })._requestId = requestId;
+
   return config;
 });
 
@@ -110,14 +119,33 @@ const forceLogout = (): void => {
 api.interceptors.response.use(
   (response) => {
     markBackendUp();
+    const meta = response.config as unknown as { _requestStartTime?: number; _requestId?: string };
+    const durationMs = meta._requestStartTime ? Date.now() - meta._requestStartTime : undefined;
+    if (response.config.method !== 'get') {
+      platformLogService.log({
+        level: 'info',
+        action: `HTTP_${response.config.method?.toUpperCase()}`,
+        details: `${response.config.url} — تم بنجاح (${response.status})`,
+        requestId: meta._requestId,
+        durationMs,
+      });
+    }
     return response;
   },
   async (error: AxiosError) => {
-    const originalConfig = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
+    const originalConfig = error.config as (InternalAxiosRequestConfig & { _retried?: boolean; _requestStartTime?: number; _requestId?: string }) | undefined;
+    const durationMs = originalConfig?._requestStartTime ? Date.now() - originalConfig._requestStartTime : undefined;
 
     // 1) خطأ شبكة (الخلفية متوقفة) → تفعيل الوضع التجريبي مؤقتاً
     if (!error.response) {
       markBackendDown();
+      platformLogService.log({
+        level: 'warn',
+        action: 'NETWORK_FALLBACK',
+        details: `تعذر الاتصال بـ ${originalConfig?.url ?? 'الخادم'} — تم تفعيل الوضع التجريبي`,
+        requestId: originalConfig?._requestId,
+        durationMs,
+      });
       return Promise.reject(error);
     }
 
