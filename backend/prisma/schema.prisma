@@ -1,0 +1,339 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// User & Authentication Management
+// ==========================================
+
+enum Role {
+  CUSTOMER
+  VENDOR
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String        @id @default(uuid())
+  email         String        @unique
+  phone         String        @unique
+  passwordHash  String
+  role          Role          @default(CUSTOMER)
+  status        AccountStatus @default(ACTIVE)
+  verifiedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  profile       UserProfile?
+  vendor        Vendor?
+  seatHolds     SeatHold[]
+  bookings      Booking[]
+  sessions      Session[]
+  activityLogs  ActivityLog[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  fullName    String
+  avatar      String?
+  preferences Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique
+  deviceInfo String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  resource  String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+// ==========================================
+// Vendor Management
+// ==========================================
+
+enum VendorStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+model Vendor {
+  id        String       @id @default(uuid())
+  userId    String       @unique
+  name      String
+  city      String
+  phone     String
+  rating    Float        @default(0.0)
+  status    VendorStatus @default(PENDING)
+  documents Json?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contracts VendorContract[]
+  trips     Trip[]
+
+  @@map("vendors")
+}
+
+model VendorContract {
+  id             String   @id @default(uuid())
+  vendorId       String
+  commissionRate Float
+  startDate      DateTime
+  endDate        DateTime
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  vendor         Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_contracts")
+}
+
+// ==========================================
+// Route & Trip Management
+// ==========================================
+
+enum RouteType {
+  INTERNAL
+  INTERNATIONAL
+}
+
+model Route {
+  id          String    @id @default(uuid())
+  origin      String
+  destination String
+  distance    Float?
+  duration    Int?      // in minutes
+  type        RouteType
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  trips       Trip[]
+
+  @@map("routes")
+}
+
+enum TripStatus {
+  SCHEDULED
+  BOARDING
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+model Trip {
+  id            String     @id @default(uuid())
+  vendorId      String
+  routeId       String
+  busType       String
+  departureTime DateTime
+  arrivalTime   DateTime
+  priceYer      Float
+  priceSar      Float?
+  status        TripStatus @default(SCHEDULED)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  vendor        Vendor     @relation(fields: [vendorId], references: [id])
+  route         Route      @relation(fields: [routeId], references: [id])
+  seats         Seat[]
+  bookings      Booking[]
+
+  @@map("trips")
+}
+
+// ==========================================
+// Seat Management
+// ==========================================
+
+model SeatLayout {
+  id           String   @id @default(uuid())
+  busType      String   @unique
+  rows         Int
+  cols         Int
+  layoutConfig Json     // details about aisles, missing seats, etc.
+  createdAt    DateTime @default(now())
+
+  @@map("seat_layouts")
+}
+
+enum SeatType {
+  STANDARD
+  PREMIUM
+  VIP
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  BOOKED
+  DISABLED
+}
+
+model Seat {
+  id         String     @id @default(uuid())
+  tripId     String
+  layoutId   String
+  seatNumber String
+  row        Int
+  col        Int
+  type       SeatType   @default(STANDARD)
+  status     SeatStatus @default(AVAILABLE)
+
+  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  holds      SeatHold[]
+  passengers BookingPassenger[]
+
+  @@unique([tripId, seatNumber])
+  @@map("seats")
+}
+
+model SeatHold {
+  id        String   @id @default(uuid())
+  seatId    String
+  userId    String
+  expiresAt DateTime
+  status    String   @default("ACTIVE") // ACTIVE, EXPIRED, CONVERTED
+  createdAt DateTime @default(now())
+
+  seat      Seat     @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("seat_holds")
+}
+
+// ==========================================
+// Booking Management
+// ==========================================
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  bookingCode   String        @unique
+  userId        String
+  tripId        String
+  totalYer      Float
+  totalSar      Float?
+  paymentStatus PaymentStatus @default(PENDING)
+  status        BookingStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id])
+  trip          Trip               @relation(fields: [tripId], references: [id])
+  passengers    BookingPassenger[]
+  payments      Payment[]
+
+  @@map("bookings")
+}
+
+model BookingPassenger {
+  id             String   @id @default(uuid())
+  bookingId      String
+  seatId         String
+  fullName       String
+  identityNumber String?
+  phone          String?
+  gender         String?
+
+  booking        Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seat           Seat     @relation(fields: [seatId], references: [id])
+
+  @@map("booking_passengers")
+}
+
+// ==========================================
+// Payment & Financial
+// ==========================================
+
+model Payment {
+  id          String        @id @default(uuid())
+  bookingId   String
+  method      String        // e.g. KURAMI, JAWWAL, CARD, CASH
+  amount      Float
+  currency    String        @default("YER")
+  status      PaymentStatus @default(PENDING)
+  gatewayRef  String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  booking     Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("payments")
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+  PAYOUT
+}
+
+model Transaction {
+  id        String          @id @default(uuid())
+  paymentId String
+  type      TransactionType
+  amount    Float
+  status    String          @default("SUCCESS")
+  createdAt DateTime        @default(now())
+
+  payment   Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}

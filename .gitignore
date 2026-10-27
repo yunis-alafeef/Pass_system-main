@@ -1,0 +1,18 @@
+node_modules
+
+# Build output (generated — must not be committed)
+dist/
+backend/dist/
+
+# Environment files (secrets — never commit)
+.env
+.env.local
+backend/.env
+
+# Logs & caches
+*.log
+npm-debug.log*
+.cache/
+.vite/
+
+desktop.ini
