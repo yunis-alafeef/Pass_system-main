@@ -8,6 +8,8 @@
  */
 
 import { api, getApiErrorMessage, isBackendLikelyDown } from '../api';
+import { platformLogService } from './platformLogService';
+import { platformConfigService } from './platformConfigService';
 
 // ================== الأنواع ==================
 
@@ -22,6 +24,8 @@ export interface User {
     role: UserRole;
     isVerified: boolean;
     createdAt: string;
+    companyName?: string;
+    commercialRecord?: string;
 }
 
 export interface AuthTokens {
@@ -39,6 +43,17 @@ export interface RegisterPayload {
     email: string;
     phone: string;
     password: string;
+}
+
+export interface VendorRegisterPayload {
+    companyName: string;
+    commercialRecord: string;
+    contactPerson: string;
+    email: string;
+    phone: string;
+    password: string;
+    fleetSize: number;
+    routesType: 'internal' | 'international' | 'both';
 }
 
 export interface ActiveSession {
@@ -230,44 +245,123 @@ const persistAuthResponse = (data: ApiAuthResponse, rememberMe: boolean): LoginR
  * يحاول API الخلفية أولاً (POST /auth/login)، وينجح في الوضع التجريبي
  * عند تعذر الوصول للخادم فقط. أخطاء الخلفية الصريحة (401/400) تمرر للمستخدم.
  */
+interface AttemptRecord {
+    attempts: number;
+    lockedUntil?: number;
+}
+
+const getLockoutStore = (): Record<string, AttemptRecord> => {
+    try {
+        const raw = localStorage.getItem('login_attempt_records');
+        return raw ? JSON.parse(raw) : {};
+    } catch {
+        return {};
+    }
+};
+
+const saveLockoutStore = (data: Record<string, AttemptRecord>) => {
+    localStorage.setItem('login_attempt_records', JSON.stringify(data));
+};
+
 export const login = async (
     identifier: string,
     password: string,
     rememberMe: boolean
 ): Promise<LoginResponse> => {
+    const normId = identifier.trim().toLowerCase();
+    const config = platformConfigService.getConfig();
+    const maxAttempts = config.maxFailedLoginAttempts || 5;
+    const lockMinutes = config.lockoutDurationMinutes || 15;
+
+    // FR-UI-002-05: التحقق من قفل الحساب المؤقت
+    const lockoutStore = getLockoutStore();
+    const record = lockoutStore[normId];
+    if (record?.lockedUntil && Date.now() < record.lockedUntil) {
+        const remainingMin = Math.ceil((record.lockedUntil - Date.now()) / (60 * 1000));
+        platformLogService.log({
+            level: 'security',
+            action: 'LOGIN_BLOCKED_LOCKED',
+            details: `محاولة تسجيل دخول مرفوضة لحساب مقفل مؤقتاً: ${normId}`,
+        });
+        throw new Error(`تم قفل الحساب مؤقتاً لأسباب أمنية بسبب تكرار المحاولات الخاطئة. المتبقي: ${remainingMin} دقيقة أو استخدم استرداد كلمة المرور.`);
+    }
+
     if (!isBackendLikelyDown()) {
         try {
             const { data } = await api.post<ApiAuthResponse>('/auth/login', {
-                email: identifier.trim().toLowerCase(),
+                email: normId,
                 password,
             });
+            delete lockoutStore[normId];
+            saveLockoutStore(lockoutStore);
+
+            platformLogService.log({
+                level: 'info',
+                action: 'AUTH_LOGIN_SUCCESS',
+                details: `تسجيل دخول ناجح للمستخدم ${normId} عبر الخادم`,
+                userRole: data.user.role,
+            });
+
             return persistAuthResponse(data, rememberMe);
         } catch (error) {
-            // خطأ صريح من الخلفية → رسالة واضحة للمستخدم (لا fallback صامت لتجنب إرباك الحسابات)
             if ((error as { response?: unknown }).response) {
                 throw new Error(getApiErrorMessage(error));
             }
-            // خطأ شبكة → نكمل بالوضع التجريبي أدناه
         }
     }
 
     await delay();
     const accounts = getMockAccounts();
     const acc = accounts.find(
-        (a) => a.email === identifier.trim().toLowerCase() || a.phone === identifier.trim()
+        (a) => a.email === normId || a.phone === identifier.trim()
     );
     if (!acc) {
         throw new Error('لا يوجد حساب مرتبط بهذا البريد الإلكتروني أو رقم الهاتف');
     }
+
     if (acc.password !== password) {
-        throw new Error('كلمة المرور غير صحيحة، حاول مرة أخرى');
+        const curAttempts = (record?.attempts || 0) + 1;
+        if (curAttempts >= maxAttempts) {
+            lockoutStore[normId] = {
+                attempts: curAttempts,
+                lockedUntil: Date.now() + lockMinutes * 60 * 1000,
+            };
+            saveLockoutStore(lockoutStore);
+
+            platformLogService.log({
+                level: 'security',
+                action: 'ACCOUNT_LOCKED',
+                details: `قفل الحساب ${normId} مؤقتاً لمدة ${lockMinutes} دقيقة بعد ${maxAttempts} محاولات خاطئة`,
+            });
+
+            throw new Error(`تم تجاوز الحد الأقصى للمحاولات (${maxAttempts}). تم قفل الحساب مؤقتاً لمدة ${lockMinutes} دقيقة لحمايتك.`);
+        } else {
+            lockoutStore[normId] = { attempts: curAttempts };
+            saveLockoutStore(lockoutStore);
+            const remaining = maxAttempts - curAttempts;
+            throw new Error(`كلمة المرور غير صحيحة. متبقي لديك ${remaining} محاولة قبل قفل الحساب.`);
+        }
     }
+
+    // نجاح الدخول — مسح المحاولات الفاشلة
+    delete lockoutStore[normId];
+    saveLockoutStore(lockoutStore);
+
     const { password: _pw, ...user } = acc;
     const tokens: AuthTokens = {
         accessToken: buildMockJwt(user),
         refreshToken: `mock-refresh-${randomId()}`,
     };
     tokenStore.save(tokens, user, rememberMe);
+
+    platformLogService.log({
+        level: 'info',
+        action: 'AUTH_LOGIN_SUCCESS',
+        details: `تسجيل دخول ناجح للمستخدم ${user.fullName} (${user.role})`,
+        userId: user.id,
+        userRole: user.role,
+    });
+
     return { user, tokens };
 };
 
@@ -564,6 +658,114 @@ export const addBookingToHistory = (booking: unknown): void => {
     const existing = JSON.parse(localStorage.getItem('user_bookings') || '[]');
     existing.unshift(booking);
     localStorage.setItem('user_bookings', JSON.stringify(existing));
+};
+
+/**
+ * استعادة وتعيين كلمة المرور الجديدة (FR-UI-003-03)
+ */
+export const resetPasswordWithToken = async (
+    identifier: string,
+    _code: string,
+    newPassword: string
+): Promise<void> => {
+    await delay(700);
+    const norm = identifier.trim().toLowerCase();
+    const accounts = getMockAccounts();
+    const idx = accounts.findIndex((a) => a.email === norm || a.phone === identifier.trim());
+
+    if (idx < 0) {
+        throw new Error('لا يوجد حساب مسجل بهذه البيانات');
+    }
+
+    accounts[idx].password = newPassword;
+    saveMockAccounts(accounts);
+
+    // فك أي قفل مؤقت عن الحساب
+    const lockoutStore = getLockoutStore();
+    delete lockoutStore[norm];
+    saveLockoutStore(lockoutStore);
+
+    platformLogService.log({
+        level: 'security',
+        action: 'PASSWORD_RESET_SUCCESS',
+        details: `تمت استعادة وتغيير كلمة المرور بنجاح للمستخدم ${norm}`,
+        userId: accounts[idx].id,
+    });
+};
+
+/**
+ * تسجيل مكتب / شركة نقل (FR-UI-001-02 والمهمة 2.10)
+ */
+export const registerVendor = async (payload: VendorRegisterPayload): Promise<LoginResponse> => {
+    await delay(800);
+    const accounts = getMockAccounts();
+    const normEmail = payload.email.trim().toLowerCase();
+    const normPhone = payload.phone.trim();
+
+    if (accounts.some((a) => a.email === normEmail || a.phone === normPhone)) {
+        throw new Error('هذا البريد الإلكتروني أو رقم الهاتف مسجل بالفعل');
+    }
+
+    const vendorUser: MockAccount = {
+        id: `v_usr_${randomId()}`,
+        fullName: payload.contactPerson.trim(),
+        email: normEmail,
+        phone: normPhone,
+        avatar: `https://i.pravatar.cc/150?u=${randomId()}`,
+        role: 'vendor',
+        isVerified: true,
+        createdAt: new Date().toISOString(),
+        password: payload.password,
+        companyName: payload.companyName.trim(),
+        commercialRecord: payload.commercialRecord.trim(),
+    };
+
+    accounts.push(vendorUser);
+    saveMockAccounts(accounts);
+
+    const { password: _pw, ...user } = vendorUser;
+    const tokens: AuthTokens = {
+        accessToken: buildMockJwt(user),
+        refreshToken: `mock-refresh-vendor-${randomId()}`,
+    };
+    tokenStore.save(tokens, user, true);
+
+    platformLogService.log({
+        level: 'info',
+        action: 'VENDOR_REGISTER_SUCCESS',
+        details: `تم تسجيل مكتب نقل جديد بنجاح: ${payload.companyName} (سجل: ${payload.commercialRecord})`,
+        userId: user.id,
+        userRole: 'vendor',
+    });
+
+    return { user, tokens };
+};
+
+/**
+ * إلغاء حجز قائم من قبل العميل (FR-CP-001-03 و FR-UI-006-05)
+ */
+export const cancelBooking = async (bookingId: string): Promise<void> => {
+    await delay(500);
+    const raw = localStorage.getItem('user_bookings');
+    if (!raw) return;
+
+    try {
+        const bookings = JSON.parse(raw) as Array<Record<string, unknown>>;
+        const idx = bookings.findIndex((b) => b.id === bookingId || b.bookingCode === bookingId);
+        if (idx >= 0) {
+            bookings[idx].status = 'cancelled';
+            bookings[idx].paymentStatus = 'refunded';
+            localStorage.setItem('user_bookings', JSON.stringify(bookings));
+
+            platformLogService.log({
+                level: 'warn',
+                action: 'BOOKING_CANCELLED',
+                details: `قام العميل بإلغاء الحجز رقم: ${(bookings[idx].bookingCode as string) || bookingId}`,
+            });
+        }
+    } catch (e) {
+        console.error('Failed to cancel booking:', e);
+    }
 };
 
 /**
