@@ -8,11 +8,13 @@ import {
     tokenStore,
     login as svcLogin,
     register as svcRegister,
+    registerVendor as svcRegisterVendor,
     logout as svcLogout,
     updateProfile as svcUpdateProfile,
     type User,
     type UserRole,
     type RegisterPayload,
+    type VendorRegisterPayload,
 } from '../services/authService';
 
 interface AuthContextValue {
@@ -22,6 +24,7 @@ interface AuthContextValue {
     login: (identifier: string, password: string, rememberMe: boolean) => Promise<User>;
     /** إنشاء حساب جديد — يُسجّل الدخول تلقائياً عند نجاح الخلفية */
     register: (payload: RegisterPayload) => Promise<User>;
+    registerVendor: (payload: VendorRegisterPayload) => Promise<User>;
     logout: () => Promise<void>;
     updateUser: (data: Partial<Pick<User, 'fullName' | 'phone' | 'avatar'>>) => Promise<User>;
 }
@@ -39,6 +42,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const register = useCallback(async (payload: RegisterPayload) => {
         const res = await svcRegister(payload);
+        setUser(res.user);
+        return res.user;
+    }, []);
+
+    const registerVendor = useCallback(async (payload: VendorRegisterPayload) => {
+        const res = await svcRegisterVendor(payload);
         setUser(res.user);
         return res.user;
     }, []);
@@ -62,6 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 role: user?.role ?? null,
                 login,
                 register,
+                registerVendor,
                 logout,
                 updateUser,
             }}

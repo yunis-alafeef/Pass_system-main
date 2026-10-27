@@ -201,7 +201,7 @@ const SeatMapPage: React.FC = () => {
       </div>
 
       {/* Bus Layout */}
-      <div style={{ background: '#0b1120', border: '2px solid rgba(255,255,255,0.08)', borderRadius: '24px', padding: '1.5rem', maxWidth: '460px', margin: '0 auto 1.5rem auto' }}>
+      <div style={{ background: '#0b1120', border: '2px solid rgba(255,255,255,0.08)', borderRadius: '24px', padding: '1.25rem 0.85rem', maxWidth: '440px', width: '100%', margin: '0 auto 1.5rem auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px dashed rgba(255,255,255,0.1)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
           <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.4rem 0.8rem', borderRadius: '8px', fontSize: '0.8rem', color: '#94a3b8' }}>
             🚪 الباب الأمامي

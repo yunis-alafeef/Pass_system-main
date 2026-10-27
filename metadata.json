@@ -1,0 +1,8 @@
+{
+  "name": "Pass System",
+  "description": "منصة ذكية متكاملة لإدارة النقل البري والحجوزات وإصدار التذاكر الإلكترونية وتتبع الرحلات والمقاعد",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

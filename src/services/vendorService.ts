@@ -32,7 +32,7 @@ const demoStats = (): VendorStats => {
   return {
     totalTrips: trips.length,
     totalBookings: 1420, // رقم إجمالي تراكمي للعرض التجريبي
-    totalRevenueYER: 49_700_000,
+    totalRevenueYER: totalRevenueYER || 49_700_000,
     occupancyRate: totalSeats > 0 ? Math.round((booked / totalSeats) * 100) : 0,
     rating: 4.9,
     seatCapacity: totalSeats,

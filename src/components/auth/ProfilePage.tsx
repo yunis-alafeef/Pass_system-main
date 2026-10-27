@@ -8,6 +8,7 @@ import {
     revokeSession,
     revokeAllOtherSessions,
     getBookingHistory,
+    cancelBooking,
     type ActiveSession,
     type BookingHistoryItem,
 } from '../../services/authService';
@@ -113,6 +114,18 @@ export const ProfilePage: React.FC = () => {
         setFeedback({ type: 'success', text: 'تم إنهاء الجلسة' });
     };
 
+    const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+
+    /** إلغاء حجز محدد مع تأكيد مدمج في الواجهة */
+    const handleCancelBooking = async (bookingId: string) => {
+        await cancelBooking(bookingId);
+        setBookings((prev) =>
+            prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' as const } : b))
+        );
+        setConfirmCancelId(null);
+        setFeedback({ type: 'success', text: 'تم إلغاء الحجز بنجاح وتحويل المبلغ لحساب الاسترداد' });
+    };
+
     /** إنهاء جميع الجلسات الأخرى */
     const handleRevokeAll = async () => {
         await revokeAllOtherSessions();
@@ -121,10 +134,10 @@ export const ProfilePage: React.FC = () => {
     };
 
     return (
-        <div className="container animate-fade-in" style={{ paddingTop: '2.5rem', paddingBottom: '3rem' }}>
+        <div className="container animate-fade-in" style={{ paddingTop: '2rem', paddingBottom: '3rem' }}>
 
             {/* Page Header */}
-            <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <User color="#3a86ff" /> الملف الشخصي والإعدادات
             </h1>
 
@@ -142,7 +155,7 @@ export const ProfilePage: React.FC = () => {
                 </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(250px, 300px) 1fr', gap: '2rem', alignItems: 'start' }}>
+            <div className="profile-layout-grid" style={{ display: 'grid', gap: '1.5rem', alignItems: 'start' }}>
 
                 {/* Sidebar Nav */}
                 <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
@@ -364,18 +377,58 @@ export const ProfilePage: React.FC = () => {
                                     <Link to="/" className="btn-primary" style={{ marginTop: '1.5rem', display: 'inline-flex', textDecoration: 'none' }}>البحث عن رحلات</Link>
                                 </div>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                    {bookings.map((b) => (
-                                        <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                            <div>
-                                                <div style={{ color: '#fff', fontWeight: 700 }}>{b.route}</div>
-                                                <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                                                    {b.bookingCode} • {b.date} • المقاعد: {b.seats}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                                    {bookings.map((b) => {
+                                        const isCancelled = b.status === 'cancelled';
+                                        return (
+                                            <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', flexWrap: 'wrap', gap: '0.85rem' }}>
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                        <span style={{ color: '#fff', fontWeight: 800, fontSize: '1rem' }}>{b.route}</span>
+                                                        <span className={`badge ${isCancelled ? 'badge-amber' : 'badge-teal'}`} style={{ fontSize: '0.72rem', padding: '0.15rem 0.55rem' }}>
+                                                            {isCancelled ? 'تم الإلغاء والاسترداد' : 'حجز مؤكد'}
+                                                        </span>
+                                                    </div>
+                                                    <div style={{ color: '#94a3b8', fontSize: '0.82rem', marginTop: '0.35rem' }}>
+                                                        رمز الحجز: <strong style={{ color: '#3a86ff' }}>{b.bookingCode}</strong> • التاريخ: {b.date} • المقاعد: <span style={{ color: '#00f5d4' }}>{b.seats}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                                    <div style={{ color: '#00f5d4', fontWeight: 800, fontSize: '1.05rem' }}>{b.priceYER.toLocaleString()} ر.ي</div>
+
+                                                    {!isCancelled && (
+                                                        confirmCancelId === b.id ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                                <button
+                                                                    onClick={() => void handleCancelBooking(b.id)}
+                                                                    className="btn-primary"
+                                                                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.78rem', background: '#ff006e' }}
+                                                                >
+                                                                    تأكيد الإلغاء
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setConfirmCancelId(null)}
+                                                                    className="btn-secondary"
+                                                                    style={{ padding: '0.4rem 0.6rem', fontSize: '0.78rem' }}
+                                                                >
+                                                                    تراجع
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => setConfirmCancelId(b.id)}
+                                                                className="btn-secondary"
+                                                                style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', color: '#ff006e', borderColor: 'rgba(255,0,110,0.3)' }}
+                                                            >
+                                                                إلغاء الحجز
+                                                            </button>
+                                                        )
+                                                    )}
                                                 </div>
                                             </div>
-                                            <div style={{ color: '#00f5d4', fontWeight: 800 }}>{b.priceYER.toLocaleString()} ر.ي</div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

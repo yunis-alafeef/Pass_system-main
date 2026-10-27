@@ -15,7 +15,7 @@ import { useTrip } from '../hooks/useAppData';
 const TripDetailsPage: React.FC = () => {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data, isLoading, isError } = useTrip(id);
+  const { data, isLoading } = useTrip(id);
 
   // حالة التحميل (Skeleton)
   if (isLoading) {

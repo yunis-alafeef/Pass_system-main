@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Ticket, QrCode, Printer, CheckCircle, Bus, MapPin, Calendar, Clock, ShieldCheck } from 'lucide-react';
+import { X, QrCode, Printer, CheckCircle, Bus } from 'lucide-react';
 import { Booking } from '../types';
 
 interface TicketModalProps {
