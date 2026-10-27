@@ -59,19 +59,19 @@ export const SeatMapModal: React.FC<SeatMapModalProps> = ({ trip, onClose, onPro
       position: 'fixed',
       inset: 0,
       zIndex: 200,
-      background: 'rgba(5, 8, 15, 0.85)',
+      background: 'rgba(5, 8, 15, 0.88)',
       backdropFilter: 'blur(12px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '1.5rem'
+      padding: '0.75rem'
     }}>
       <div className="glass-panel animate-fade-in" style={{
         width: '100%',
         maxWidth: '850px',
-        maxHeight: '90vh',
+        maxHeight: '92vh',
         overflowY: 'auto',
-        padding: '2rem',
+        padding: '1.5rem 1rem',
         border: '1px solid rgba(58, 134, 255, 0.3)'
       }}>
         
