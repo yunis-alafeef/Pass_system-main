@@ -9,6 +9,8 @@ import { api, isBackendLikelyDown } from '../api';
 import { Booking, PaymentMethod, Passenger, Trip } from '../types';
 import { ApiBooking, mapApiBookingToBooking } from '../types/api';
 import type { DataSource } from './tripService';
+import { generateInvoice, processRefund } from './paymentService';
+import { platformLogService } from './platformLogService';
 
 const BOOKINGS_KEY = 'user_bookings';
 
@@ -19,6 +21,22 @@ export interface CreateBookingPayload {
   paymentMethod: PaymentMethod;
   totalPriceYER: number;
   totalPriceSAR: number;
+  baggageCount?: number;
+  baggageExtraFeeYER?: number;
+  specialAssistance?: boolean;
+}
+
+export interface CancelBookingPayload {
+  bookingId: string;
+  reason?: string;
+}
+
+export interface CancelBookingResult {
+  booking: Booking;
+  refundedAmountYER: number;
+  cancellationFeeYER: number;
+  refundedAmountSAR: number;
+  source: DataSource;
 }
 
 // ================== الوضع التجريبي ==================
@@ -37,9 +55,14 @@ const writeLocalBookings = (bookings: Booking[]): void => {
 };
 
 const demoCreateBooking = (payload: CreateBookingPayload): Booking => {
+  const invoice = generateInvoice(
+    `PASS-${Math.floor(1000 + Math.random() * 9000)}`,
+    payload.totalPriceYER
+  );
+
   const booking: Booking = {
     id: `BK-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`,
-    bookingCode: `PASS-${Math.floor(1000 + Math.random() * 9000)}`,
+    bookingCode: invoice.invoiceNumber.replace('INV-', 'PASS-'),
     trip: payload.trip,
     seats: payload.seats,
     passengers: payload.passengers,
@@ -47,14 +70,25 @@ const demoCreateBooking = (payload: CreateBookingPayload): Booking => {
     totalPriceSAR: payload.totalPriceSAR,
     paymentMethod: payload.paymentMethod,
     paymentStatus: 'paid',
+    status: 'confirmed',
     bookingDate: new Intl.DateTimeFormat('ar-YE', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
     }).format(new Date()),
+    baggageCount: payload.baggageCount || 1,
+    baggageExtraFeeYER: payload.baggageExtraFeeYER || 0,
+    specialAssistance: payload.specialAssistance || false,
+    invoice,
   };
 
   writeLocalBookings([booking, ...readLocalBookings()]);
+  platformLogService.log({
+    level: 'info',
+    action: 'BOOKING_CREATED',
+    details: `حجز جديد برقم ${booking.bookingCode} للرحلة ${booking.trip.origin} ➔ ${booking.trip.destination} - مقاعد: ${booking.seats.join(',')} - الإجمالي: ${booking.totalPriceYER} ر.ي`,
+  });
+
   return booking;
 };
 
@@ -78,6 +112,8 @@ const createBookingOnApi = async (payload: CreateBookingPayload): Promise<Bookin
     paymentMethod: payload.paymentMethod,
     totalYer: payload.totalPriceYER,
     totalSar: payload.totalPriceSAR,
+    baggageCount: payload.baggageCount,
+    specialAssistance: payload.specialAssistance,
   });
   return mapApiBookingToBooking(data);
 };
@@ -91,12 +127,74 @@ export const createBooking = async (payload: CreateBookingPayload): Promise<{ bo
       const booking = await createBookingOnApi(payload);
       return { booking, source: 'api' };
     } catch (error) {
-      // رد خطأ صريح من الخلفية (مقعد محجوز، بيانات ناقصة...) → نمرره للمستخدم
       if ((error as { response?: unknown }).response) throw error;
-      // خطأ شبكة → وضع تجريبي
     }
   }
   return { booking: demoCreateBooking(payload), source: 'demo' };
+};
+
+/** إلغاء حجز مع تطبيق شروط وسياسة الإلغاء والاسترداد المالي (FR-BM-004 & BR-BM-004) */
+export const cancelBooking = async (
+  bookingId: string,
+  reason = 'إلغاء بناءً على رغبة العميل'
+): Promise<CancelBookingResult> => {
+  if (!isBackendLikelyDown()) {
+    try {
+      const { data } = await api.post(`/bookings/${bookingId}/cancel`, { reason });
+      return {
+        booking: mapApiBookingToBooking(data.booking),
+        refundedAmountYER: data.refundedAmountYER,
+        cancellationFeeYER: data.cancellationFeeYER,
+        refundedAmountSAR: data.refundedAmountSAR,
+        source: 'api',
+      };
+    } catch (error) {
+      if ((error as { response?: unknown }).response) throw error;
+    }
+  }
+
+  // معالجة محلية تجريبية
+  const allBookings = readLocalBookings();
+  const index = allBookings.findIndex((b) => b.id === bookingId || b.bookingCode === bookingId);
+  if (index === -1) {
+    throw new Error('الحجز غير موجود لإلغائه');
+  }
+
+  const booking = allBookings[index];
+  const refundResult = await processRefund(
+    booking.id,
+    booking.totalPriceYER,
+    booking.paymentMethod,
+    undefined,
+    reason
+  );
+
+  const updatedBooking: Booking = {
+    ...booking,
+    status: 'cancelled',
+    paymentStatus: 'refunded',
+    cancellationDate: new Date().toISOString(),
+    cancellationReason: reason,
+    cancellationFeeYER: refundResult.cancellationFeeYER,
+    refundedAmountYER: refundResult.refundedAmountYER,
+  };
+
+  allBookings[index] = updatedBooking;
+  writeLocalBookings(allBookings);
+
+  platformLogService.log({
+    level: 'warn',
+    action: 'BOOKING_CANCELLED',
+    details: `تم إلغاء الحجز ${booking.bookingCode} واسترداد ${refundResult.refundedAmountYER} ر.ي (رسوم الإلغاء: ${refundResult.cancellationFeeYER} ر.ي)`,
+  });
+
+  return {
+    booking: updatedBooking,
+    refundedAmountYER: refundResult.refundedAmountYER,
+    cancellationFeeYER: refundResult.cancellationFeeYER,
+    refundedAmountSAR: refundResult.refundedAmountSAR,
+    source: 'demo',
+  };
 };
 
 /** حجوزات المستخدم الحالي */
@@ -127,3 +225,4 @@ export const getBookingById = async (id: string): Promise<{ booking: Booking | n
   const local = readLocalBookings().find((b) => b.id === id || b.bookingCode === id) ?? null;
   return { booking: local, source: 'demo' };
 };
+

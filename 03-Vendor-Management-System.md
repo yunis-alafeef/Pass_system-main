@@ -313,5 +313,19 @@
 
 ---
 
-*تم إعداد هذا الملف بواسطة يونس العفيف - منصة حجز الباصات*
-*الإصدار: 1.0*
+## حالة التنفيذ الفعلي والتكامل مع النظام (Implementation & Alignment)
+
+| المتطلب / المكون | الحالة البرمجية | الملفات المرتبطة في المشروع |
+|---|---|---|
+| **تسجيل وتوثيق المكاتب (KYC)** | مكتمل ومفعل | `src/components/auth/RegisterPage.tsx`, `src/services/authService.ts`, `backend/src/modules/auth` |
+| **لوحة تحكم المكتب التفاعلية** | مكتمل ومفعل | `src/components/VendorDashboard.tsx` (تبويبات الرحلات، العقد، المالية، والأداء) |
+| **إدارة العقود والعمولات** | مكتمل ومفعل | `src/services/vendorService.ts`, `src/components/AdminDashboard.tsx`, `backend/src/modules/vendors` |
+| **سجل سحوبات الأرباح (Payouts)** | مكتمل ومفعل | `src/services/paymentService.ts` (`getVendorPayouts`, `requestVendorPayout`) |
+| **دورة حياة الرحلات وحالتها** | مكتمل ومفعل | `src/services/vendorService.ts` (`updateTripLifecycleStatus`) |
+| **حساب الإيرادات وصافي الأرباح** | مكتمل ومفعل | `src/components/VendorDashboard.tsx` مع احتساب نسبة عمولة المنصة التلقائية |
+
+---
+
+*تم إعداد وتحديث هذا الملف بواسطة يونس العفيف - منصة حجز الباصات Pass System*
+*الإصدار: 1.1 (مطابق للتنفيذ الفعلي)*
+

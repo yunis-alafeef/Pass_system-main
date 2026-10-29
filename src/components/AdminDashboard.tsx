@@ -222,21 +222,22 @@ export const AdminDashboard: React.FC = () => {
                     <th style={{ padding: '0.9rem' }}>المقر الرئيسي</th>
                     <th style={{ padding: '0.9rem' }}>رقم التواصل</th>
                     <th style={{ padding: '0.9rem' }}>التقييم</th>
-                    <th style={{ padding: '0.9rem' }}>إجمالي الرحلات</th>
-                    <th style={{ padding: '0.9rem' }}>حالة التوثيق</th>
+                    <th style={{ padding: '0.9rem' }}>الرحلات</th>
+                    <th style={{ padding: '0.9rem' }}>نسبة العمولة (FR-VM-004)</th>
+                    <th style={{ padding: '0.9rem' }}>حالة التوثيق والعقد</th>
                     <th style={{ padding: '0.9rem' }}>إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {vendorsLoading ? (
                     <tr>
-                      <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                      <td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
                         <RotateCw size={20} style={{ animation: 'spin 1.2s linear infinite' }} /> جارٍ جلب المكاتب من الخادم...
                       </td>
                     </tr>
                   ) : vendors.length === 0 ? (
                     <tr>
-                      <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                      <td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
                         {vendorsError ? 'تعذر جلب قائمة المكاتب من الخادم' : 'لا توجد مكاتب مسجلة في المنصة بعد'}
                         {vendorsError && (
                           <div style={{ marginTop: '0.75rem' }}>
@@ -256,8 +257,13 @@ export const AdminDashboard: React.FC = () => {
                         <td style={{ padding: '0.9rem', color: '#ffbe0b', fontWeight: 700 }}>⭐ {vendor.rating}</td>
                         <td style={{ padding: '0.9rem', color: '#00f5d4' }}>{vendor.totalTrips} رحلة</td>
                         <td style={{ padding: '0.9rem' }}>
+                          <span style={{ color: '#00f5d4', fontWeight: 700, background: 'rgba(0, 245, 212, 0.1)', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                            5.0%
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.9rem' }}>
                           <span className={`badge ${vendor.verified ? 'badge-teal' : 'badge-amber'}`}>
-                            {vendor.verified ? 'موثق ومرخص' : 'بانتظار التوثيق'}
+                            {vendor.verified ? 'عقد سارٍ وموثق' : 'بانتظار التوثيق'}
                           </span>
                         </td>
                         <td style={{ padding: '0.9rem' }}>

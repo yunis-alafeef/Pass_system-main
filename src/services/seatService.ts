@@ -33,6 +33,8 @@ const hashId = (id: string): number => {
   return h;
 };
 
+export const HOLD_DURATION_SECONDS = 900; // 15 دقيقة (FR-SM-004-02)
+
 const generateDemoSeats = (tripId: string): Seat[] => {
   const seats: Seat[] = [];
   const seed = hashId(tripId);
@@ -49,13 +51,19 @@ const generateDemoSeats = (tripId: string): Seat[] => {
         status = 'booked';
       }
 
+      const isVip = r <= 2;
+      const isWindow = c === 1 || c === 4;
+      const classification = isVip ? 'vip' : isWindow ? 'window' : 'aisle';
+
       seats.push({
         id: `${tripId}-seat-${seatNum}`,
         seatNumber: seatNum,
         status,
         row: r,
         col: c,
-        isVip: r <= 2,
+        isVip,
+        classification,
+        extraPriceYER: isVip ? 3000 : 0,
       });
     }
   }

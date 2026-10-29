@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, QrCode, Printer, CheckCircle, Bus } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, QrCode, Printer, CheckCircle, Bus, Share2, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { Booking } from '../types';
 
 interface TicketModalProps {
@@ -8,9 +8,27 @@ interface TicketModalProps {
 }
 
 export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) => {
+  const [showInvoice, setShowInvoice] = useState(false);
+
   const handlePrint = () => {
     window.print();
   };
+
+  const handleShareWhatsApp = () => {
+    const text = encodeURIComponent(
+      `🎫 تذكرة سفر رقمية - Pass System\n` +
+      `شركة النقل: ${booking.trip.vendorName}\n` +
+      `المسار: ${booking.trip.origin} ➔ ${booking.trip.destination}\n` +
+      `التاريخ والوقت: ${booking.trip.departureTime}\n` +
+      `المقاعد: ${booking.seats.join(', ')}\n` +
+      `رقم الحجز: ${booking.bookingCode}\n` +
+      `المبلغ: ${booking.totalPriceYER.toLocaleString()} ر.ي\n` +
+      `رابط التذكرة: ${window.location.origin}/booking/${booking.id}`
+    );
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+  };
+
+  const invoice = booking.invoice;
 
   return (
     <div style={{
@@ -26,7 +44,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) =>
     }}>
       <div className="glass-panel animate-fade-in" style={{
         width: '100%',
-        maxWidth: '650px',
+        maxWidth: '680px',
         maxHeight: '92vh',
         overflowY: 'auto',
         padding: '2.5rem',
@@ -35,8 +53,8 @@ export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) =>
       }}>
         
         {/* Top Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
             <span className="badge badge-teal" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
               <CheckCircle size={16} /> حجز مؤكد ومدفوع
             </span>
@@ -74,7 +92,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) =>
           }} />
 
           {/* Ticket Branding Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px dashed rgba(255,255,255,0.1)', paddingBottom: '1.25rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px dashed rgba(255,255,255,0.1)', paddingBottom: '1.25rem', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div>
               <div style={{ fontSize: '0.8rem', color: '#00f5d4', fontWeight: 700, letterSpacing: '1px' }}>
                 PASS SYSTEM OFFICIAL E-TICKET
@@ -131,7 +149,7 @@ export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) =>
           <div style={{ marginBottom: '1.5rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '12px' }}>
             <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.5rem' }}>أسماء المسافرين المسجلين:</div>
             {booking.passengers.map((p, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#e2e8f0', padding: '0.25rem 0', borderBottom: i < booking.passengers.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#e2e8f0', padding: '0.25rem 0', borderBottom: i < booking.passengers.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', flexWrap: 'wrap', gap: '0.4rem' }}>
                 <span>• {p.fullName} (مقعد {p.seatNumber})</span>
                 <span style={{ color: '#94a3b8' }}>هوية/جواز: {p.identityNumber}</span>
               </div>
@@ -139,13 +157,13 @@ export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) =>
           </div>
 
           {/* QR Code & Barcode Section */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '2px dashed rgba(255,255,255,0.1)', paddingTop: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '2px dashed rgba(255,255,255,0.1)', paddingTop: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <div style={{ background: '#fff', padding: '0.5rem', borderRadius: '10px' }}>
                 <QrCode size={64} color="#090d16" />
               </div>
               <div>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>مسح التذكرة عند الصعود</div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>مسح التذكرة عند الصعود (FR-BM-008-02)</div>
                 <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#00f5d4' }}>{booking.bookingCode}</div>
                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>حالة الدفع: مدفوع مؤكد ({booking.paymentMethod.toUpperCase()})</div>
               </div>
@@ -164,12 +182,56 @@ export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) =>
 
         </div>
 
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem' }}>
-          <button onClick={handlePrint} className="btn-secondary" style={{ gap: '0.5rem' }}>
-            <Printer size={18} /> طباعة أو حفظ PDF
+        {/* Invoice Toggle Section (FR-PF-007) */}
+        <div style={{ marginTop: '1.25rem' }}>
+          <button
+            onClick={() => setShowInvoice(!showInvoice)}
+            className="btn-secondary"
+            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', fontSize: '0.85rem' }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <FileText size={16} color="#3a86ff" /> تفاصيل الفاتورة الضريبية الرسمية
+            </span>
+            {showInvoice ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
-          <button onClick={onClose} className="btn-primary">
+
+          {showInvoice && (
+            <div className="glass-card animate-fade-in" style={{ padding: '1.25rem', marginTop: '0.5rem', background: 'rgba(0,0,0,0.35)', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.4rem' }}>
+                <span style={{ color: '#94a3b8' }}>رقم الفاتورة:</span>
+                <span style={{ color: '#fff', fontWeight: 700 }}>{invoice?.invoiceNumber || `INV-${booking.bookingCode}`}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: '#94a3b8' }}>تاريخ الإصدار:</span>
+                <span style={{ color: '#fff' }}>{invoice?.issueDate || booking.bookingDate}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: '#94a3b8' }}>سعر المقاعد الأساسي:</span>
+                <span style={{ color: '#fff' }}>{booking.totalPriceYER.toLocaleString()} ر.ي</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: '#94a3b8' }}>رسوم الخدمة والمنصة (5% مدمجة):</span>
+                <span style={{ color: '#00f5d4' }}>{((booking.totalPriceYER * 5) / 100).toLocaleString()} ر.ي</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', fontWeight: 800 }}>
+                <span style={{ color: '#fff' }}>صافي المبلغ المدفوع:</span>
+                <span style={{ color: '#00f5d4' }}>{booking.totalPriceYER.toLocaleString()} ر.ي ({booking.totalPriceSAR} ر.س)</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={handlePrint} className="btn-secondary" style={{ gap: '0.5rem', padding: '0.6rem 1rem', fontSize: '0.85rem' }}>
+              <Printer size={16} /> طباعة التذكرة
+            </button>
+            <button onClick={handleShareWhatsApp} className="btn-secondary" style={{ gap: '0.5rem', padding: '0.6rem 1rem', fontSize: '0.85rem', color: '#25d366' }}>
+              <Share2 size={16} /> مشاركة عبر واتساب
+            </button>
+          </div>
+          <button onClick={onClose} className="btn-primary" style={{ padding: '0.6rem 1.4rem' }}>
             تم - إغلاق
           </button>
         </div>
@@ -178,3 +240,4 @@ export const TicketModal: React.FC<TicketModalProps> = ({ booking, onClose }) =>
     </div>
   );
 };
+

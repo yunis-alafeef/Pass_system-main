@@ -74,6 +74,74 @@ const createTripOnApi = async (payload: CreateTripPayload): Promise<Trip> => {
 
 // ================== الواجهة العامة ==================
 
+import { VendorContract, VendorKYCDocuments, TripLifecycleStatus } from '../types';
+import { getVendorPayouts, requestVendorPayout } from './paymentService';
+
+export interface VendorContractDetails {
+  contract: VendorContract;
+  documents: VendorKYCDocuments;
+  branches: string[];
+}
+
+export const getVendorContractDetails = (vendorId = 'v1'): VendorContractDetails => {
+  const storedContract = localStorage.getItem(`vendor_contract_${vendorId}`);
+  if (storedContract) {
+    return JSON.parse(storedContract);
+  }
+
+  const defaultContract: VendorContractDetails = {
+    contract: {
+      contractId: `CTR-${vendorId}-2026`,
+      commissionRate: 5.0, // 5% عمولة المنصة
+      startDate: '2026-01-01',
+      endDate: '2027-01-01',
+      isActive: true,
+      autoRenew: true,
+    },
+    documents: {
+      commercialRegistryNumber: 'CR-YE-889921',
+      transportLicenseNumber: 'MOT-7721-A',
+      taxNumber: 'TAX-00984',
+      licenseExpiryDate: '2027-12-31',
+      verifiedAt: '2026-01-10',
+    },
+    branches: ['صنعاء - التحرير', 'صنعاء - باب اليمن', 'عدن - المنصورة', 'تعز - الحوبان', 'المكلا - الديس'],
+  };
+
+  localStorage.setItem(`vendor_contract_${vendorId}`, JSON.stringify(defaultContract));
+  return defaultContract;
+};
+
+export const updateVendorCommission = (vendorId: string, commissionRate: number): void => {
+  const current = getVendorContractDetails(vendorId);
+  current.contract.commissionRate = commissionRate;
+  localStorage.setItem(`vendor_contract_${vendorId}`, JSON.stringify(current));
+};
+
+export const updateTripLifecycleStatus = async (
+  tripId: string,
+  status: TripLifecycleStatus
+): Promise<{ tripId: string; status: TripLifecycleStatus }> => {
+  if (!isBackendLikelyDown()) {
+    try {
+      await api.patch(`/trips/${tripId}/status`, { status });
+      return { tripId, status };
+    } catch {
+      // fallback
+    }
+  }
+
+  // تحديث محلي تجريبي
+  const trips = DEMO_VENDOR_TRIPS();
+  const trip = trips.find((t) => t.id === tripId);
+  if (trip) {
+    trip.status = status;
+  }
+  return { tripId, status };
+};
+
+export { getVendorPayouts, requestVendorPayout };
+
 export const getVendorTrips = async (): Promise<{ trips: Trip[]; source: DataSource }> => {
   if (!isBackendLikelyDown()) {
     try {
@@ -105,7 +173,7 @@ export const getVendorStats = async (): Promise<{ stats: VendorStats; source: Da
 /**
  * إنشاء رحلة جديدة (vendor فقط) — في الوضع التجريبي يرجع كائناً محلياً
  */
-export const createVendorTrip = async (payload: CreateTripPayload): Promise<{ trip: Trip; source: DataSource }> => {
+export const createVendorTrip = async (payload: CreateTripPayload & { busType?: string; status?: TripLifecycleStatus; recurrence?: 'daily' | 'weekly' | 'none' }): Promise<{ trip: Trip; source: DataSource }> => {
   if (!isBackendLikelyDown()) {
     try {
       const trip = await createTripOnApi(payload);
@@ -129,9 +197,12 @@ export const createVendorTrip = async (payload: CreateTripPayload): Promise<{ tr
     priceSAR: Number(payload.priceSAR ?? Math.round(Number(payload.priceYER) / 400)),
     availableSeats: 45,
     totalSeats: 45,
-    busType: 'VIP الممتاز',
+    busType: (payload.busType as Trip['busType']) || 'VIP الممتاز',
     tripType: payload.destination.includes('السعودية') ? 'international' : 'internal',
+    status: payload.status || 'SCHEDULED',
+    recurrence: payload.recurrence || 'none',
     features: ['واي فاي مجاني', 'مكيف هواء', 'شاحن لكل مقعد'],
   };
   return { trip: demoTrip, source: 'demo' };
 };
+

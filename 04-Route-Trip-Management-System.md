@@ -287,5 +287,19 @@
 
 ---
 
-*تم إعداد هذا الملف بواسطة يونس العفيف - منصة حجز الباصات*
-*الإصدار: 1.0*
+## حالة التنفيذ الفعلي والتكامل مع النظام (Implementation & Alignment)
+
+| المتطلب / المكون | الحالة البرمجية | الملفات المرتبطة في المشروع |
+|---|---|---|
+| **محرك البحث المتقدم عن الرحلات** | مكتمل ومفعل | `src/components/SearchForm.tsx`, `src/pages/HomePage.tsx` (داخلي/دولي، ذهاب وعودة، فئات الحافلات) |
+| **بطاقة وتفاصيل الرحلة والمحطات** | مكتمل ومفعل | `src/components/TripCard.tsx`, `src/pages/TripDetailsPage.tsx` |
+| **خدمة الرحلات وجدولتها** | مكتمل ومفعل | `src/services/tripService.ts`, `backend/src/modules/trips` |
+| **مخطط مسار الرحلة والمحطات الوسيطة** | مكتمل ومفعل | `src/types/index.ts` (`RouteStop`), `src/pages/TripDetailsPage.tsx` |
+| **إدارة حالات الرحلة ومراحلها** | مكتمل ومفعل | `SCHEDULED` ➔ `BOARDING` ➔ `IN_TRANSIT` ➔ `COMPLETED` ➔ `CANCELLED` |
+| **إضافة وإدارة رحلات المكاتب** | مكتمل ومفعل | `src/components/VendorDashboard.tsx`, `src/hooks/useAppData.ts` |
+
+---
+
+*تم إعداد وتحديث هذا الملف بواسطة يونس العفيف - منصة حجز الباصات Pass System*
+*الإصدار: 1.1 (مطابق للتنفيذ الفعلي)*
+

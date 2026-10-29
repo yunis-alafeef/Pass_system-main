@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Armchair, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Armchair, ArrowLeft, Clock, AlertTriangle, Sparkles } from 'lucide-react';
 import { Trip, Seat, SeatStatus } from '../types';
 
 interface SeatMapModalProps {
@@ -24,13 +24,18 @@ export const SeatMapModal: React.FC<SeatMapModalProps> = ({ trip, onClose, onPro
         if (bookedSeatNumbers.includes(seatNum)) status = 'booked';
         else if (womenSeatNumbers.includes(seatNum)) status = 'women';
 
+        const isVip = r <= 2;
+        const isWindow = c === 1 || c === 4;
+
         seats.push({
           id: `seat-${seatNum}`,
           seatNumber: seatNum,
           status,
           row: r,
           col: c,
-          isVip: r <= 2 // First 2 rows are VIP
+          isVip,
+          classification: isVip ? 'vip' : isWindow ? 'window' : 'aisle',
+          extraPriceYER: isVip ? (trip.vipSeatExtraYER ?? 3000) : 0,
         });
       }
     }
@@ -41,18 +46,53 @@ export const SeatMapModal: React.FC<SeatMapModalProps> = ({ trip, onClose, onPro
   const [selectedSeatNumbers, setSelectedSeatNumbers] = useState<string[]>([]);
   const [isWomenSection] = useState(false);
 
+  // 15-Minute Temporary Hold Countdown Timer (FR-SM-004-02: 15 دقيقة)
+  const [holdSecondsLeft, setHoldSecondsLeft] = useState(900); // 15 mins * 60s
+  const [timerExpired, setTimerExpired] = useState(false);
+
+  useEffect(() => {
+    if (selectedSeatNumbers.length === 0) return;
+
+    const interval = setInterval(() => {
+      setHoldSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setTimerExpired(true);
+          setSelectedSeatNumbers([]);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [selectedSeatNumbers.length]);
+
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
   const toggleSeatSelection = (seat: Seat) => {
-    if (seat.status === 'booked') return;
+    if (seat.status === 'booked' || timerExpired) return;
 
     if (selectedSeatNumbers.includes(seat.seatNumber)) {
-      setSelectedSeatNumbers(selectedSeatNumbers.filter(s => s !== seat.seatNumber));
+      setSelectedSeatNumbers(selectedSeatNumbers.filter((s) => s !== seat.seatNumber));
     } else {
       setSelectedSeatNumbers([...selectedSeatNumbers, seat.seatNumber]);
+      if (holdSecondsLeft === 0) {
+        setHoldSecondsLeft(900);
+        setTimerExpired(false);
+      }
     }
   };
 
-  const totalPriceYER = selectedSeatNumbers.length * trip.priceYER;
-  const totalPriceSAR = selectedSeatNumbers.length * trip.priceSAR;
+  // Calculate pricing including VIP seat differentials
+  const selectedSeatsObjects = seats.filter((s) => selectedSeatNumbers.includes(s.seatNumber));
+  const totalExtraYER = selectedSeatsObjects.reduce((sum, s) => sum + (s.extraPriceYER || 0), 0);
+  const totalPriceYER = selectedSeatNumbers.length * trip.priceYER + totalExtraYER;
+  const totalPriceSAR = Math.round(totalPriceYER / (trip.priceYER ? trip.priceYER / trip.priceSAR : 400));
 
   return (
     <div style={{
@@ -76,7 +116,7 @@ export const SeatMapModal: React.FC<SeatMapModalProps> = ({ trip, onClose, onPro
       }}>
         
         {/* Modal Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
             <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Armchair color="#3a86ff" /> مخطط المقاعد الذكي - {trip.vendorName}
@@ -85,30 +125,64 @@ export const SeatMapModal: React.FC<SeatMapModalProps> = ({ trip, onClose, onPro
               الرحلة: {trip.origin} ➔ {trip.destination} ({trip.departureTime})
             </span>
           </div>
+
+          {/* 15-Minute Countdown Indicator */}
+          {selectedSeatNumbers.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                background: holdSecondsLeft < 120 ? 'rgba(255, 0, 110, 0.2)' : 'rgba(58, 134, 255, 0.15)',
+                border: holdSecondsLeft < 120 ? '1px solid #ff006e' : '1px solid #3a86ff',
+                padding: '0.45rem 0.9rem',
+                borderRadius: '12px',
+                color: holdSecondsLeft < 120 ? '#ff006e' : '#00f5d4',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+              }}
+            >
+              <Clock size={16} />
+              <span>مؤقت حجز المقاعد المؤقت: {formatTimer(holdSecondsLeft)}</span>
+            </div>
+          )}
+
           <button onClick={onClose} className="btn-secondary" style={{ padding: '0.5rem', borderRadius: '50%' }}>
             <X size={20} />
           </button>
         </div>
 
+        {timerExpired && (
+          <div style={{ background: 'rgba(255, 0, 110, 0.15)', border: '1px solid #ff006e', color: '#ff8a8a', padding: '0.8rem 1rem', borderRadius: '12px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertTriangle size={18} />
+            <span>انتهت مهلة الحجز المؤقت (15 دقيقة). تم تحرير المقاعد للركاب الآخرين، يرجى إعادة الاختيار.</span>
+          </div>
+        )}
+
         {/* Legend / Key */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap', background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderRadius: '12px', marginBottom: '1.5rem', fontSize: '0.85rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1.25rem', flexWrap: 'wrap', background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderRadius: '12px', marginBottom: '1.5rem', fontSize: '0.85rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <div className="bus-seat available" style={{ width: '24px', height: '24px', borderRadius: '6px' }}></div>
+            <div className="bus-seat available" style={{ width: '22px', height: '22px', borderRadius: '6px' }}></div>
             <span>متاح</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <div className="bus-seat selected" style={{ width: '24px', height: '24px', borderRadius: '6px' }}></div>
+            <div className="bus-seat selected" style={{ width: '22px', height: '22px', borderRadius: '6px' }}></div>
             <span>محدد للحجز</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <div className="bus-seat booked" style={{ width: '24px', height: '24px', borderRadius: '6px' }}></div>
+            <div className="bus-seat booked" style={{ width: '22px', height: '22px', borderRadius: '6px' }}></div>
             <span>محجوز مسبقاً</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <div className="bus-seat women" style={{ width: '24px', height: '24px', borderRadius: '6px' }}></div>
+            <div className="bus-seat women" style={{ width: '22px', height: '22px', borderRadius: '6px' }}></div>
             <span>مخصص عوائل/نساء</span>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ background: 'rgba(255, 190, 11, 0.2)', border: '1px solid #ffbe0b', color: '#ffbe0b', padding: '0.1rem 0.5rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700 }}>VIP +3,000</span>
+            <span>صفوف VIP الأولى</span>
+          </div>
         </div>
+
 
         {/* Bus Layout Container */}
         <div style={{ background: '#0b1120', border: '2px solid rgba(255,255,255,0.08)', borderRadius: '24px', padding: '1.5rem', maxWidth: '420px', margin: '0 auto 1.5rem auto' }}>
@@ -145,7 +219,7 @@ export const SeatMapModal: React.FC<SeatMapModalProps> = ({ trip, onClose, onPro
                           onClick={() => toggleSeatSelection(seat)}
                         >
                           <span>{seat.seatNumber}</span>
-                          {seat.isVip && <span style={{ fontSize: '0.6rem', opacity: 0.8 }}>VIP</span>}
+                          {seat.isVip && <span style={{ fontSize: '0.6rem', opacity: 0.8, display: 'inline-flex', alignItems: 'center', gap: '2px' }}><Sparkles size={8} /> VIP</span>}
                         </div>
                       );
                     })}
@@ -167,7 +241,7 @@ export const SeatMapModal: React.FC<SeatMapModalProps> = ({ trip, onClose, onPro
                           onClick={() => toggleSeatSelection(seat)}
                         >
                           <span>{seat.seatNumber}</span>
-                          {seat.isVip && <span style={{ fontSize: '0.6rem', opacity: 0.8 }}>VIP</span>}
+                          {seat.isVip && <span style={{ fontSize: '0.6rem', opacity: 0.8, display: 'inline-flex', alignItems: 'center', gap: '2px' }}><Sparkles size={8} /> VIP</span>}
                         </div>
                       );
                     })}
